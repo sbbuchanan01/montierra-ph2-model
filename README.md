@@ -19,8 +19,12 @@ JV waterfall — exactly the way the source workbook does.
   - `defaults.ts`, `costData.ts`, `curves.ts` — base-case inputs verbatim from the workbook
   - `__tests__/validation.test.ts` — validation against the reviewed workbook
 - `src/app/` — Next.js App Router pages (deal summary, assumption pages, cash flow, returns,
-  taxes, comps, lender/JV export one-pagers)
-- `src/proxy.ts` — site-wide password gate (HMAC-signed cookie, `SITE_PASSWORD` env var)
+  taxes, comps, lender/JV export one-pagers, scenario + project comparison)
+- `src/proxy.ts` — auth gate: Supabase email/password sessions (same partner accounts as the
+  Montierra portal; access limited by the shared `allowed_emails` allowlist)
+- Storage: projects and scenarios live in Supabase (`montierra_projects` /
+  `montierra_scenarios`, RLS-gated) and sync across devices; unsaved working drafts stay in
+  the browser until saved
 
 ## Validation (base case vs. the reviewed workbook)
 
@@ -54,5 +58,5 @@ npm run dev        # http://localhost:3000
 npx vitest run     # validation tests
 ```
 
-Set `SITE_PASSWORD` in `.env.local` to enable the password gate locally (without it the
-gate is open).
+`.env.local` needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the
+shared Montierra Supabase project). Sign in with a portal partner account.
