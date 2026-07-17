@@ -33,6 +33,9 @@ const clone = <T,>(v: T): T => structuredClone(v);
  */
 let legacyProjects: Project[] | null = null;
 
+/** Single-flight guard: init() is called from multiple mounts; run once. */
+let initPromise: Promise<void> | null = null;
+
 interface ModelStore {
   /** Server state has been fetched at least once. */
   loaded: boolean;
@@ -140,6 +143,8 @@ export const useModelStore = create<ModelStore>()(
 
         init: async () => {
           if (get().loaded) return;
+          if (initPromise) return initPromise;
+          initPromise = (async () => {
           await sync(async () => {
             let projects = await fetchProjects();
             const supabase = createClient();
@@ -174,6 +179,12 @@ export const useModelStore = create<ModelStore>()(
             reconcile(projects);
           });
           if (get().syncError) set({ loaded: true }); // don't block the UI on sync failure
+          })();
+          try {
+            await initPromise;
+          } finally {
+            initPromise = null;
+          }
         },
 
         refresh: async () => {
