@@ -42,16 +42,21 @@ export default function ComparePage() {
   const { deleteScenario, renameScenario, switchScenario } = useModelStore.getState();
 
   const columns = useMemo(
-    () => [
-      { id: null as string | null, name: 'Base case', model: tryRunModel(project.baseCase) },
-      ...project.scenarios.map((sc) => ({
-        id: sc.id as string | null,
-        name: sc.name,
-        model: tryRunModel(sc.assumptions),
-      })),
-    ],
+    () =>
+      project
+        ? [
+            { id: null as string | null, name: 'Base case', model: tryRunModel(project.baseCase) },
+            ...project.scenarios.map((sc) => ({
+              id: sc.id as string | null,
+              name: sc.name,
+              model: tryRunModel(sc.assumptions),
+            })),
+          ]
+        : [],
     [project],
   );
+
+  if (!project) return null;
 
   const base = columns[0].model;
 
@@ -147,7 +152,7 @@ export default function ComparePage() {
                             className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100"
                             onClick={() => {
                               const name = prompt('Rename scenario:', c.name);
-                              if (name?.trim()) renameScenario(c.id!, name.trim());
+                              if (name?.trim()) void renameScenario(c.id!, name.trim());
                             }}
                           >
                             Rename
@@ -155,7 +160,7 @@ export default function ComparePage() {
                           <button
                             className="rounded border border-red-200 px-1.5 py-0.5 text-[11px] text-red-600 hover:bg-red-50"
                             onClick={() => {
-                              if (confirm(`Delete scenario "${c.name}"?`)) deleteScenario(c.id!);
+                              if (confirm(`Delete scenario "${c.name}"?`)) void deleteScenario(c.id!);
                             }}
                           >
                             Delete

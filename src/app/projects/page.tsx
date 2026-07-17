@@ -85,9 +85,10 @@ export default function ProjectsPage() {
             disabled={!name.trim()}
             onClick={() => {
               if (!guardDirty()) return;
-              createProject(name.trim(), TEMPLATE_LABELS[templateLabel]);
-              setName('');
-              router.push('/assumptions/unit-mix');
+              void createProject(name.trim(), TEMPLATE_LABELS[templateLabel]).then(() => {
+                setName('');
+                router.push('/assumptions/unit-mix');
+              });
             }}
           >
             Create project
@@ -153,7 +154,7 @@ export default function ProjectsPage() {
                         className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100"
                         onClick={() => {
                           const n = prompt('Rename project:', project.name);
-                          if (n?.trim()) renameProject(project.id, n.trim());
+                          if (n?.trim()) void renameProject(project.id, n.trim());
                         }}
                       >
                         Rename
@@ -167,7 +168,7 @@ export default function ProjectsPage() {
                                 `Delete project "${project.name}" and its ${project.scenarios.length} scenario(s)? This cannot be undone.`,
                               )
                             ) {
-                              deleteProject(project.id);
+                              void deleteProject(project.id);
                             }
                           }}
                         >
@@ -184,9 +185,9 @@ export default function ProjectsPage() {
       </Card>
 
       <Note>
-        Projects and scenarios are saved in this browser (localStorage) — they persist across
-        visits on this device but do not sync between devices or users. Syncing would be the
-        first thing a (free-tier) Supabase backend adds.
+        Projects and scenarios are stored in Supabase and shared by all partner accounts — changes
+        sync across devices. Unsaved working-draft edits stay local to your browser until you save.
+        Use the ↻ button in the bar above to pull the latest saved state.
       </Note>
     </div>
   );

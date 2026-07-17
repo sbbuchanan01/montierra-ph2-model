@@ -1,30 +1,50 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { AUTH_COOKIE, verifyToken } from '@/lib/auth';
+import { createServerClient } from '@supabase/ssr';
+import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * Site-wide password gate (Next 16 proxy, Node runtime).
- * A signed, expiring cookie is issued by /api/login; everything except the
- * login flow and static assets requires it. If SITE_PASSWORD is not set
- * (e.g. local dev without .env.local), the gate is open.
+ * Auth gate: Supabase email/password sessions (same accounts as the portal).
+ * Unauthenticated requests are redirected to /login.
  */
-export function proxy(request: NextRequest) {
-  const secret = process.env.SITE_PASSWORD;
-  if (!secret) return NextResponse.next();
+export async function proxy(request: NextRequest) {
+  let response = NextResponse.next({ request });
 
-  const { pathname } = request.nextUrl;
-  if (pathname === '/login' || pathname.startsWith('/api/login')) {
-    return NextResponse.next();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
+          );
+        },
+      },
+    },
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isLogin = request.nextUrl.pathname.startsWith('/login');
+  if (!user && !isLogin) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
   }
-
-  const token = request.cookies.get(AUTH_COOKIE)?.value;
-  if (verifyToken(token, secret)) return NextResponse.next();
-
-  const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = '/login';
-  loginUrl.search = '';
-  return NextResponse.redirect(loginUrl);
+  if (user && isLogin) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/';
+    return NextResponse.redirect(url);
+  }
+  return response;
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|ico|webp)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
