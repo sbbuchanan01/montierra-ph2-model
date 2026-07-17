@@ -2,6 +2,22 @@ import type { Assumptions } from './types';
 import { DEFAULT_COST_ITEMS } from './costData';
 import { CURVE_TEMPLATES } from './curves';
 
+/**
+ * A blank-slate copy of the model for a new project: the full structure
+ * (cost line items, unit-mix rows, schedules, rate conventions) is kept,
+ * but deal-specific quantities — unit counts/SF/rents and every cost
+ * dollar amount — are zeroed so nothing from Montierra leaks in.
+ */
+export function makeBlankAssumptions(name: string): Assumptions {
+  const a = structuredClone(DEFAULT_ASSUMPTIONS);
+  a.project = { ...a.project, name, location: '', productType: '', siteAcres: 0 };
+  a.unitMix = a.unitMix.map((u) => ({ ...u, count: 0, avgSf: 0, rentPsf: 0 }));
+  a.costs.lineItems = a.costs.lineItems.map((i) =>
+    i.amountType === 'fixed' || i.amountType === 'perUnit' ? { ...i, value: 0 } : i,
+  );
+  return a;
+}
+
 /** Base-case assumptions, verbatim from the source workbook. */
 export const DEFAULT_ASSUMPTIONS: Assumptions = {
   project: {

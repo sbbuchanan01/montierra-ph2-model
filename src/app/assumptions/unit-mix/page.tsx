@@ -15,8 +15,54 @@ export default function UnitMixPage() {
       return d;
     });
 
+  const P = a.project;
+  const setP = (patch: Partial<typeof P>) =>
+    update((d) => ({ ...d, project: { ...d.project, ...patch } }));
+
   return (
     <div className="space-y-5">
+      <Card title="Project Info">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <Field label="Property name">
+            <input
+              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
+              value={P.name}
+              onChange={(e) => setP({ name: e.target.value })}
+            />
+          </Field>
+          <Field label="Location">
+            <input
+              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
+              value={P.location}
+              onChange={(e) => setP({ location: e.target.value })}
+            />
+          </Field>
+          <Field label="Product type">
+            <input
+              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
+              value={P.productType}
+              onChange={(e) => setP({ productType: e.target.value })}
+            />
+          </Field>
+          <Field label="Site acres">
+            <NumberInput value={P.siteAcres} onChange={(v) => setP({ siteAcres: v })} step={0.01} min={0} />
+          </Field>
+          <Field label="Analysis start (YYYY-MM-01)">
+            <input
+              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+              value={P.analysisStart}
+              onChange={(e) => {
+                const v = e.target.value;
+                setP({ analysisStart: v });
+              }}
+              onBlur={(e) => {
+                if (!/^\d{4}-\d{2}-01$/.test(e.target.value)) setP({ analysisStart: '2028-01-01' });
+              }}
+            />
+          </Field>
+        </div>
+      </Card>
+
       <Card
         title="Unit Mix (Rents = Asking Today)"
         subtitle={`${fmtNum(m.totalUnits)} units · ${fmtNum(m.totalNrsf)} NRSF · avg asking rent ${fmtMoney(m.avgRent)}/mo`}
