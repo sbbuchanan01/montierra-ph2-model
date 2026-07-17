@@ -7,6 +7,7 @@ iterative financing solve → lease-up/income → property taxes → sale/exit �
 JV waterfall — exactly the way the source workbook does.
 
 **Live site:** https://montierra-ph2-model.vercel.app (password-gated)
+**Repository:** https://github.com/sbbuchanan01/montierra-ph2-model (pushes to `main` auto-deploy via Vercel)
 
 ## Structure
 
