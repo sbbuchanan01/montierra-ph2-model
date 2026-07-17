@@ -223,13 +223,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
 function ProjectTitle() {
   const project = useActiveProject();
-  const a = useModelStore((s) => s.assumptions);
+  const location = project ? [project.city, project.state].filter(Boolean).join(', ') : '';
+  const sub = [location, project?.constructionType].filter(Boolean).join(' · ');
   return (
     <>
       {project?.name ?? 'Development Model'}
-      <span className="ml-2 text-xs font-normal text-slate-400">
-        {[a.project.location, a.project.productType].filter(Boolean).join(' · ') || 'Development model'}
-      </span>
+      <span className="ml-2 text-xs font-normal text-slate-400">{sub || 'Development model'}</span>
     </>
   );
 }

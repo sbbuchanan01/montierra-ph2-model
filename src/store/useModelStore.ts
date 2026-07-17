@@ -15,15 +15,21 @@ export interface Scenario {
   assumptions: Assumptions;
 }
 
-export interface Project {
-  id: string;
+export interface ProjectMeta {
   name: string;
+  city: string;
+  state: string;
+  constructionType: string;
+}
+
+export interface Project extends ProjectMeta {
+  id: string;
   createdAt: string;
   baseCase: Assumptions;
   scenarios: Scenario[];
 }
 
-export type ProjectTemplate = 'blank' | 'copy' | 'montierra';
+export type ProjectTemplate = 'blank' | 'copy';
 
 const clone = <T,>(v: T): T => structuredClone(v);
 
@@ -57,8 +63,8 @@ interface ModelStore {
   discard: () => void;
   switchScenario: (scenarioId: string | null) => void;
   switchProject: (projectId: string) => void;
-  createProject: (name: string, template: ProjectTemplate) => Promise<void>;
-  renameProject: (projectId: string, name: string) => Promise<void>;
+  createProject: (meta: ProjectMeta, template: ProjectTemplate) => Promise<void>;
+  updateProjectMeta: (projectId: string, patch: Partial<ProjectMeta>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   renameScenario: (scenarioId: string, name: string) => Promise<void>;
   deleteScenario: (scenarioId: string) => Promise<void>;
@@ -77,7 +83,10 @@ const savedSnapshot = (project: Project | undefined, scenarioId: string | null):
 async function fetchProjects(): Promise<Project[]> {
   const supabase = createClient();
   const [projectsRes, scenariosRes] = await Promise.all([
-    supabase.from('montierra_projects').select('id,name,created_at,base_case').order('created_at'),
+    supabase
+      .from('montierra_projects')
+      .select('id,name,city,state,construction_type,created_at,base_case')
+      .order('created_at'),
     supabase.from('montierra_scenarios').select('id,project_id,name,saved_at,assumptions').order('saved_at'),
   ]);
   if (projectsRes.error) throw new Error(projectsRes.error.message);
@@ -85,6 +94,9 @@ async function fetchProjects(): Promise<Project[]> {
   return (projectsRes.data ?? []).map((p) => ({
     id: p.id as string,
     name: p.name as string,
+    city: (p.city as string) ?? '',
+    state: (p.state as string) ?? '',
+    constructionType: (p.construction_type as string) ?? '',
     createdAt: p.created_at as string,
     baseCase: p.base_case as Assumptions,
     scenarios: (scenariosRes.data ?? [])
@@ -154,11 +166,28 @@ export const useModelStore = create<ModelStore>()(
               const toUpload =
                 legacyProjects && legacyProjects.length > 0
                   ? legacyProjects
-                  : [{ id: '', name: 'Montierra Ph. II', createdAt: '', baseCase: DEFAULT_ASSUMPTIONS, scenarios: [] }];
+                  : [
+                      {
+                        id: '',
+                        name: 'Montierra Ph. II',
+                        city: 'Leander',
+                        state: 'TX',
+                        constructionType: 'Surface MF',
+                        createdAt: '',
+                        baseCase: DEFAULT_ASSUMPTIONS,
+                        scenarios: [],
+                      },
+                    ];
               for (const p of toUpload) {
                 const { data: row, error } = await supabase
                   .from('montierra_projects')
-                  .insert({ name: p.name, base_case: p.baseCase })
+                  .insert({
+                    name: p.name,
+                    city: p.city ?? '',
+                    state: p.state ?? '',
+                    construction_type: p.constructionType ?? '',
+                    base_case: p.baseCase,
+                  })
                   .select('id')
                   .single();
                 if (error) throw new Error(error.message);
@@ -302,25 +331,31 @@ export const useModelStore = create<ModelStore>()(
             };
           }),
 
-        createProject: async (name, template) => {
+        createProject: async (meta, template) => {
           const s = get();
           const baseCase =
             template === 'blank'
-              ? makeBlankAssumptions(name)
-              : template === 'copy'
-                ? { ...clone(s.assumptions), project: { ...clone(s.assumptions.project), name } }
-                : { ...clone(DEFAULT_ASSUMPTIONS), project: { ...clone(DEFAULT_ASSUMPTIONS.project), name } };
+              ? makeBlankAssumptions(meta.name)
+              : { ...clone(s.assumptions), project: { ...clone(s.assumptions.project), name: meta.name } };
+          baseCase.project.location = [meta.city, meta.state].filter(Boolean).join(', ');
+          baseCase.project.productType = meta.constructionType;
           await sync(async () => {
             const supabase = createClient();
             const { data: row, error } = await supabase
               .from('montierra_projects')
-              .insert({ name, base_case: baseCase })
+              .insert({
+                name: meta.name,
+                city: meta.city,
+                state: meta.state,
+                construction_type: meta.constructionType,
+                base_case: baseCase,
+              })
               .select('id,created_at')
               .single();
             if (error) throw new Error(error.message);
             const project: Project = {
               id: row.id as string,
-              name,
+              ...meta,
               createdAt: row.created_at as string,
               baseCase,
               scenarios: [],
@@ -335,15 +370,22 @@ export const useModelStore = create<ModelStore>()(
           });
         },
 
-        renameProject: async (projectId, name) => {
+        updateProjectMeta: async (projectId, patch) => {
           await sync(async () => {
             const supabase = createClient();
+            const dbPatch: Record<string, string> = { updated_at: new Date().toISOString() };
+            if (patch.name !== undefined) dbPatch.name = patch.name;
+            if (patch.city !== undefined) dbPatch.city = patch.city;
+            if (patch.state !== undefined) dbPatch.state = patch.state;
+            if (patch.constructionType !== undefined) dbPatch.construction_type = patch.constructionType;
             const { error } = await supabase
               .from('montierra_projects')
-              .update({ name, updated_at: new Date().toISOString() })
+              .update(dbPatch)
               .eq('id', projectId);
             if (error) throw new Error(error.message);
-            set({ projects: get().projects.map((p) => (p.id === projectId ? { ...p, name } : p)) });
+            set({
+              projects: get().projects.map((p) => (p.id === projectId ? { ...p, ...patch } : p)),
+            });
           });
         },
 
@@ -433,15 +475,27 @@ export const useModelStore = create<ModelStore>()(
         if (version < 3) {
           // Capture v1/v2 local projects for a one-time upload to Supabase.
           const old = persisted as
-            | { assumptions?: Assumptions; projects?: Project[] }
+            | { assumptions?: Assumptions; projects?: (Partial<Project> & { name: string })[] }
             | undefined;
           if (old?.projects && old.projects.length > 0) {
-            legacyProjects = old.projects;
+            legacyProjects = old.projects.map((p) => ({
+              id: p.id ?? '',
+              name: p.name,
+              city: p.city ?? '',
+              state: p.state ?? '',
+              constructionType: p.constructionType ?? '',
+              createdAt: p.createdAt ?? '',
+              baseCase: p.baseCase ?? DEFAULT_ASSUMPTIONS,
+              scenarios: p.scenarios ?? [],
+            }));
           } else if (old?.assumptions) {
             legacyProjects = [
               {
                 id: '',
                 name: 'Montierra Ph. II',
+                city: 'Leander',
+                state: 'TX',
+                constructionType: 'Surface MF',
                 createdAt: '',
                 baseCase: old.assumptions,
                 scenarios: [],

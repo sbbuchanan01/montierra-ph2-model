@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Card, Th, Td, Money } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useActiveProject, useModel, useModelStore } from '@/store/useModelStore';
 import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
 
 type Variant = 'jv' | 'debt';
@@ -10,7 +10,11 @@ type Variant = 'jv' | 'debt';
 export default function ExportPage() {
   const m = useModel();
   const a = useModelStore((s) => s.assumptions);
+  const project = useActiveProject();
   const [variant, setVariant] = useState<Variant>('jv');
+  const projectName = project?.name ?? a.project.name;
+  const location = project ? [project.city, project.state].filter(Boolean).join(', ') : a.project.location;
+  const productType = project?.constructionType || a.project.productType;
 
   const perUnit = (v: number) => fmtMoney(v / Math.max(1, m.totalUnits));
   const perSf = (v: number) => fmtMoney(v / Math.max(1, m.totalNrsf));
@@ -53,10 +57,10 @@ export default function ExportPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm print:border-0 print:shadow-none">
         <div className="border-b-2 border-slate-900 pb-3">
           <h2 className="text-xl font-bold text-slate-900">
-            {a.project.name} — {variant === 'jv' ? 'JV Equity Request' : 'Loan Request'}
+            {projectName} — {variant === 'jv' ? 'JV Equity Request' : 'Loan Request'}
           </h2>
           <p className="text-sm text-slate-500">
-            {a.project.location} · {a.project.productType} · {fmtNum(m.totalUnits)} units / {fmtNum(m.totalNrsf)} NRSF
+            {[location, productType].filter(Boolean).join(' · ')} · {fmtNum(m.totalUnits)} units / {fmtNum(m.totalNrsf)} NRSF
           </p>
         </div>
 
@@ -67,9 +71,9 @@ export default function ExportPage() {
               <tbody>
                 {(
                   [
-                    ['Location', a.project.location],
+                    ['Location', location || '—'],
                     ['Acreage', `${a.project.siteAcres} ac`],
-                    ['Product Type', a.project.productType],
+                    ['Product Type', productType || '—'],
                     ['Units', fmtNum(m.totalUnits)],
                     ['Net Rentable SF', fmtNum(m.totalNrsf)],
                     ['Average Unit Size', `${fmtNum(m.totalNrsf / Math.max(1, m.totalUnits))} SF`],

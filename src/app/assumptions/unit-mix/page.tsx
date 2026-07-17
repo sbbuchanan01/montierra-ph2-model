@@ -21,29 +21,11 @@ export default function UnitMixPage() {
 
   return (
     <div className="space-y-5">
-      <Card title="Project Info">
+      <Card
+        title="Site & Timing"
+        subtitle="Project name, city, state, and construction type are edited on the Projects tab."
+      >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-          <Field label="Property name">
-            <input
-              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
-              value={P.name}
-              onChange={(e) => setP({ name: e.target.value })}
-            />
-          </Field>
-          <Field label="Location">
-            <input
-              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
-              value={P.location}
-              onChange={(e) => setP({ location: e.target.value })}
-            />
-          </Field>
-          <Field label="Product type">
-            <input
-              className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
-              value={P.productType}
-              onChange={(e) => setP({ productType: e.target.value })}
-            />
-          </Field>
           <Field label="Site acres">
             <NumberInput value={P.siteAcres} onChange={(v) => setP({ siteAcres: v })} step={0.01} min={0} />
           </Field>
