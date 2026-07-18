@@ -10,13 +10,22 @@ export interface UnitTypeRow {
   rentPsf: number; // asking rent $/SF/month
 }
 
-export type CostAmountType = 'fixed' | 'perUnit' | 'hardCostContingencyPct' | 'computed';
+export type CostAmountType =
+  | 'fixed' // lump-sum $
+  | 'perUnit' // $/unit × unit count
+  | 'perRsf' // $/rentable SF × total NRSF
+  | 'hardCostContingencyPct' // % × General Construction Contract total
+  | 'computed';
 
 /**
  * One line item of the Detailed Cost Input. `value` is $ for 'fixed',
- * $/unit for 'perUnit', a decimal % for 'hardCostContingencyPct'.
- * 'computed' rows (external construction interest, interim RE taxes,
- * vacancy/carrying, loan fee, project contingency) are engine outputs.
+ * $/unit for 'perUnit', $/SF for 'perRsf', a decimal % for
+ * 'hardCostContingencyPct' (% of the GC contract, like the workbook's
+ * hard-cost contingency). 'computed' rows (external construction interest,
+ * interim RE taxes, vacancy/carrying, loan fee, project contingency) are
+ * engine outputs. `startMonth`/`endMonth` (analysis months, anchored to the
+ * analysis start date) override the schedule-derived phasing window;
+ * omitted = derived from the project schedule like the source workbook.
  */
 export interface CostLineItem {
   id: string;
@@ -25,6 +34,8 @@ export interface CostLineItem {
   label: string;
   amountType: CostAmountType;
   value: number;
+  startMonth?: number | null;
+  endMonth?: number | null;
 }
 
 export interface TaxJurisdiction {

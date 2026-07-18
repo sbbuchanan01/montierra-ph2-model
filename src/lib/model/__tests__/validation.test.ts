@@ -109,6 +109,45 @@ describe('sensitivity sanity checks', () => {
     expect(out.returns.projectXirr!).toBeGreaterThan(base.returns.projectXirr!);
   });
 
+  it('custom budget line: per-RSF basis with timing override flows through', () => {
+    const a = structuredClone(DEFAULT_ASSUMPTIONS);
+    a.costs.lineItems = [
+      ...a.costs.lineItems,
+      {
+        id: 'custom-1',
+        code: '200299',
+        group: 'Custom',
+        label: 'Test per-RSF line',
+        amountType: 'perRsf',
+        value: 2, // $2/SF × 20,000 SF = $40,000
+        startMonth: 3,
+        endMonth: 6,
+      },
+    ];
+    const out = runModel(a);
+    const base = runModel(DEFAULT_ASSUMPTIONS);
+    const row = out.budget.rows.find((r) => r.key === 'custom-1')!;
+    expect(row.amount).toBeCloseTo(40_000, 6);
+    expect(row.startMonth).toBe(3);
+    expect(row.finishMonth).toBe(6);
+    for (let i = 0; i < row.monthly.length; i++) {
+      const month = i + 1;
+      expect(row.monthly[i]).toBeCloseTo(month >= 3 && month <= 6 ? 10_000 : 0, 6);
+    }
+    // Total rises by the line plus its knock-on financing/contingency effects
+    expect(out.budget.totalGross).toBeGreaterThan(base.budget.totalGross + 40_000);
+    expect(out.converged).toBe(true);
+  });
+
+  it('deleting a budget line recalculates the total', () => {
+    const a = structuredClone(DEFAULT_ASSUMPTIONS);
+    a.costs.lineItems = a.costs.lineItems.filter((i) => i.id !== 'ffe-misc'); // $25,000
+    const out = runModel(a);
+    const base = runModel(DEFAULT_ASSUMPTIONS);
+    expect(out.budget.totalGross).toBeLessThan(base.budget.totalGross - 25_000);
+    expect(out.converged).toBe(true);
+  });
+
   it('changing a cost assumption ripples through to total cost and MOIC', () => {
     const a = structuredClone(DEFAULT_ASSUMPTIONS);
     a.costs.lineItems = a.costs.lineItems.map((i) =>

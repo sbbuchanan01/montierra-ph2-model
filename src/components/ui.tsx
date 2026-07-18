@@ -35,9 +35,9 @@ export function Th({ children, right = true, className = '' }: { children?: Reac
   );
 }
 
-export function Td({ children, right = true, className = '' }: { children?: ReactNode; right?: boolean; className?: string }) {
+export function Td({ children, right = true, className = '', colSpan }: { children?: ReactNode; right?: boolean; className?: string; colSpan?: number }) {
   return (
-    <td className={`whitespace-nowrap px-3 py-1.5 text-sm tabular-nums ${right ? 'text-right' : 'text-left'} ${className}`}>
+    <td colSpan={colSpan} className={`whitespace-nowrap px-3 py-1.5 text-sm tabular-nums ${right ? 'text-right' : 'text-left'} ${className}`}>
       {children}
     </td>
   );

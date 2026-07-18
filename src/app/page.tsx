@@ -1,13 +1,11 @@
-'use client';
+﻿'use client';
 
 import { Card, StatCard, Th, Td, Money } from '@/components/ui';
 import { useModel, useModelStore } from '@/store/useModelStore';
 import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
 import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
-
-const NAVY = ['#0f2a43', '#27496b', '#3f6b94', '#6b93b8', '#9dbcd6', '#c9dbea'];
 
 export default function DealSummaryPage() {
   const m = useModel();
@@ -56,47 +54,52 @@ export default function DealSummaryPage() {
 
       <div className="grid gap-5 lg:grid-cols-3">
         <Card title="Sources & Uses" subtitle={`Uses total ${fmtMoney(m.budget.totalGross)}`}>
-          <div className="h-56">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={uses} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={1}>
-                  {uses.map((_, i) => (
-                    <Cell key={i} fill={NAVY[i % NAVY.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => fmtMoney(Number(v))} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <table className="w-full">
-            <tbody>
-              {uses.map((row, i) => (
-                <tr key={row.name} className="border-t border-slate-100">
-                  <Td right={false} className="text-slate-600">
-                    <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ background: NAVY[i] }} />
-                    {row.name}
-                  </Td>
-                  <Td><Money v={row.value} /></Td>
-                  <Td className="text-slate-400">{fmtPct(row.value / m.budget.totalGross, 1)}</Td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <Th right={false}>Uses</Th>
+                  <Th>Amount</Th>
+                  <Th>$ / Unit</Th>
+                  <Th>%</Th>
                 </tr>
-              ))}
-              <tr className="border-t border-slate-300 font-semibold">
-                <Td right={false}>Total Uses (gross)</Td>
-                <Td><Money v={m.budget.totalGross} /></Td>
-                <Td className="text-slate-400">100.0%</Td>
-              </tr>
-              <tr className="border-t border-slate-100">
-                <Td right={false} className="text-slate-600">Construction Loan</Td>
-                <Td><Money v={m.financing.loanAmount} /></Td>
-                <Td className="text-slate-400">{fmtPct(a.financing.construction.ltc, 1)}</Td>
-              </tr>
-              <tr className="border-t border-slate-100">
-                <Td right={false} className="text-slate-600">Equity</Td>
-                <Td><Money v={m.financing.equityCommitment} /></Td>
-                <Td className="text-slate-400">{fmtPct(1 - a.financing.construction.ltc, 1)}</Td>
-              </tr>
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {uses.map((row) => (
+                  <tr key={row.name} className="border-t border-slate-100">
+                    <Td right={false} className="text-slate-600">{row.name}</Td>
+                    <Td><Money v={row.value} /></Td>
+                    <Td className="text-slate-500">{fmtMoney(row.value / Math.max(1, m.totalUnits))}</Td>
+                    <Td className="text-slate-400">{fmtPct(row.value / m.budget.totalGross, 1)}</Td>
+                  </tr>
+                ))}
+                <tr className="border-t border-slate-300 font-semibold">
+                  <Td right={false}>Total Uses (gross)</Td>
+                  <Td><Money v={m.budget.totalGross} /></Td>
+                  <Td>{fmtMoney(m.budget.totalGross / Math.max(1, m.totalUnits))}</Td>
+                  <Td className="text-slate-400">100.0%</Td>
+                </tr>
+                <tr className="border-t border-slate-200">
+                  <Td right={false} className="pt-3 text-slate-600">Construction Loan</Td>
+                  <Td className="pt-3"><Money v={m.financing.loanAmount} /></Td>
+                  <Td className="pt-3 text-slate-500">{fmtMoney(m.financing.loanAmount / Math.max(1, m.totalUnits))}</Td>
+                  <Td className="pt-3 text-slate-400">{fmtPct(a.financing.construction.ltc, 1)}</Td>
+                </tr>
+                <tr className="border-t border-slate-100">
+                  <Td right={false} className="text-slate-600">Equity</Td>
+                  <Td><Money v={m.financing.equityCommitment} /></Td>
+                  <Td className="text-slate-500">{fmtMoney(m.financing.equityCommitment / Math.max(1, m.totalUnits))}</Td>
+                  <Td className="text-slate-400">{fmtPct(1 - a.financing.construction.ltc, 1)}</Td>
+                </tr>
+                <tr className="border-t border-slate-300 font-semibold">
+                  <Td right={false}>Total Capital Sources</Td>
+                  <Td><Money v={m.financing.loanAmount + m.financing.equityCommitment} /></Td>
+                  <Td>{fmtMoney((m.financing.loanAmount + m.financing.equityCommitment) / Math.max(1, m.totalUnits))}</Td>
+                  <Td className="text-slate-400">100.0%</Td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </Card>
 
         <Card title="Cumulative Equity Cash Flow" subtitle="Project (pre-promote) cash flow to/from equity">
@@ -131,6 +134,7 @@ export default function DealSummaryPage() {
 
         <div className="space-y-5">
           <Card title="Project Schedule">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr>
@@ -144,35 +148,47 @@ export default function DealSummaryPage() {
                   <tr key={label} className="border-t border-slate-100">
                     <Td right={false} className="text-slate-700">{label}</Td>
                     <Td>{month}</Td>
-                    <Td>{date ? fmtDate(date) : '—'}</Td>
+                    <Td>{date ? fmtDate(date) : 'â€”'}</Td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
           <Card title="Unit Mix Summary" subtitle={`${fmtNum(m.totalUnits)} units · ${fmtNum(m.totalNrsf)} SF · avg rent ${fmtMoney(m.avgRent)}/mo`}>
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <Th right={false}>Type</Th>
-                  <Th>Units</Th>
-                  <Th>Avg SF</Th>
-                  <Th>Rent</Th>
-                  <Th>PSF</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {a.unitMix.filter((r) => r.count > 0).map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100">
-                    <Td right={false}>{r.unitType}</Td>
-                    <Td>{r.count}</Td>
-                    <Td>{fmtNum(r.avgSf)}</Td>
-                    <Td>{fmtMoney(r.avgSf * r.rentPsf)}</Td>
-                    <Td>${r.rentPsf.toFixed(2)}</Td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <Th right={false}>Type</Th>
+                    <Th>Units</Th>
+                    <Th>Avg SF</Th>
+                    <Th>Rent</Th>
+                    <Th>PSF</Th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {a.unitMix.filter((r) => r.count > 0).map((r) => (
+                    <tr key={r.id} className="border-t border-slate-100">
+                      <Td right={false}>{r.unitType}</Td>
+                      <Td>{r.count}</Td>
+                      <Td>{fmtNum(r.avgSf)}</Td>
+                      <Td>{fmtMoney(r.avgSf * r.rentPsf)}</Td>
+                      <Td>${r.rentPsf.toFixed(2)}</Td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-slate-300 font-semibold">
+                    <Td right={false}>Total / Average</Td>
+                    <Td>{fmtNum(m.totalUnits)}</Td>
+                    <Td>{fmtNum(m.totalUnits > 0 ? m.totalNrsf / m.totalUnits : 0)}</Td>
+                    <Td>{fmtMoney(m.avgRent)}</Td>
+                    <Td>
+                      ${(m.totalNrsf > 0 ? (m.avgRent * m.totalUnits) / m.totalNrsf : 0).toFixed(2)}
+                    </Td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </Card>
         </div>
       </div>
@@ -248,3 +264,4 @@ export default function DealSummaryPage() {
     </div>
   );
 }
+

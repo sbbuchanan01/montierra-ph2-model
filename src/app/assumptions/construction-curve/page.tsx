@@ -36,7 +36,7 @@ export default function CurvePage() {
       <Card
         title="Construction Draw Curve"
         subtitle={`Applies to the General Construction Contract only (${fmtMoney(
-          m.budget.rows.find((r) => r.code === '200202')?.amount ?? 0,
+          m.budget.rows.filter((r) => r.code === '200202').reduce((s, r) => s + r.amount, 0),
         )}). Construction runs months 1–${m.constructionEndMonth} (completion ${fmtDate(
           m.monthly[m.constructionEndMonth - 1]?.date ?? m.sale.date,
         )}).`}
@@ -118,7 +118,11 @@ export default function CurvePage() {
             <ComposedChart
               data={m.monthly.filter((r) => r.month <= m.constructionEndMonth + 2).map((r) => ({
                 month: r.month,
-                gc: Math.round(m.budget.rows.find((b) => b.code === '200202')?.monthly[r.month - 1] ?? 0),
+                gc: Math.round(
+                  m.budget.rows
+                    .filter((b) => b.code === '200202')
+                    .reduce((s, b) => s + (b.monthly[r.month - 1] ?? 0), 0),
+                ),
                 total: Math.round(r.capex),
               }))}
               margin={{ left: 10, right: 10, top: 10 }}

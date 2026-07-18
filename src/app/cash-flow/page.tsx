@@ -121,6 +121,7 @@ export default function CashFlowPage() {
                 {periods.map((p) => (
                   <Th key={p.key}>{gran === 'annual' ? p.label : p.label}</Th>
                 ))}
+                <Th className="border-l border-slate-200">Total</Th>
               </tr>
             </thead>
             <tbody>
@@ -130,26 +131,42 @@ export default function CashFlowPage() {
                   {m.annual.filter((y) => y.startMonth <= m.sale.month).map((y) => (
                     <Td key={y.year}>{fmtPct(y.avgOccupancy, 0)}</Td>
                   ))}
+                  <Td className="border-l border-slate-200">
+                    {fmtPct(
+                      periods.reduce((s, p) => s + p.rows.reduce((x, r) => x + r.occupancy, 0), 0) /
+                        Math.max(1, periods.reduce((s, p) => s + p.rows.length, 0)),
+                      0,
+                    )}
+                  </Td>
                 </tr>
               )}
-              {(showOps ? [...opsRows.map((r) => ({ ...r, bold: false, section: undefined as string | undefined })), ...ROWS] : ROWS).map((row) => (
+              {(showOps ? [...opsRows.map((r) => ({ ...r, bold: false, section: undefined as string | undefined })), ...ROWS] : ROWS).map((row) => {
+                const isBalance = row.label === 'Ending Loan Balance';
+                const allRows = periods.flatMap((p) => p.rows);
+                const total = isBalance
+                  ? row.get(allRows[allRows.length - 1])
+                  : allRows.reduce((s, r) => s + row.get(r), 0);
+                return (
                 <tr key={row.label} className={`border-t border-slate-100 ${row.bold ? 'bg-slate-50 font-semibold' : ''}`}>
                   <Td right={false} className={`sticky left-0 ${row.bold ? 'bg-slate-50' : 'bg-white'} text-slate-700`}>
                     {row.label}
                   </Td>
                   {periods.map((p) => {
-                    const v =
-                      row.label === 'Ending Loan Balance'
-                        ? row.get(p.rows[p.rows.length - 1])
-                        : p.rows.reduce((s, r) => s + row.get(r), 0);
+                    const v = isBalance
+                      ? row.get(p.rows[p.rows.length - 1])
+                      : p.rows.reduce((s, r) => s + row.get(r), 0);
                     return (
                       <Td key={p.key}>
                         <Money v={v} colored />
                       </Td>
                     );
                   })}
+                  <Td className="border-l border-slate-200 font-semibold">
+                    {isBalance ? <span className="text-slate-400">—</span> : <Money v={total} colored />}
+                  </Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

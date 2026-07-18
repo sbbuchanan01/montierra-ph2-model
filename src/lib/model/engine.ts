@@ -244,19 +244,15 @@ export function runModel(a: Assumptions): ModelOutput {
         return i.value;
       case 'perUnit':
         return i.value * units;
+      case 'perRsf':
+        return i.value * nrsf;
       case 'hardCostContingencyPct':
-        return a.costs.hardCostContingencyPct * gcContractTotal;
+        return i.value * gcContractTotal;
       case 'computed':
         if (i.id === 'retail-ti') return retailTi;
         return 0; // engine fills these later
     }
   };
-
-  // Amount per budget row (cost code), Development Budget structure.
-  const amountByCode = new Map<string, number>();
-  for (const item of a.costs.lineItems) {
-    amountByCode.set(item.code, (amountByCode.get(item.code) ?? 0) + itemAmount(item));
-  }
 
   const timingByCode = (code: string): TimingSpec => {
     const spread = (start: number, end: number): TimingSpec => ({ phasing: 'spread', start, end });
@@ -338,17 +334,25 @@ export function runModel(a: Assumptions): ModelOutput {
     }
   };
 
-  const rowLabelByCode: Record<string, string> = {};
-  for (const item of a.costs.lineItems) {
-    if (!rowLabelByCode[item.code]) rowLabelByCode[item.code] = item.group;
-  }
-
-  // Static (non-computed) budget rows with monthly draw schedules.
+  // One budget row per line item; timing comes from the item's editable
+  // start/end override, falling back to the schedule-derived window
+  // (mirroring the Development Budget's M/O columns).
   const budgetRows: BudgetRow[] = [];
-  const codes = [...amountByCode.keys()];
-  for (const code of codes) {
-    const timing = timingByCode(code);
-    const amount = amountByCode.get(code) ?? 0;
+  for (const item of a.costs.lineItems) {
+    const derived = timingByCode(item.code);
+    const hasOverride =
+      derived.phasing !== 'computed' &&
+      item.startMonth != null &&
+      item.endMonth != null &&
+      item.startMonth >= 1;
+    const timing: TimingSpec = hasOverride
+      ? {
+          phasing: item.startMonth === item.endMonth ? 'lump' : 'spread',
+          start: item.startMonth!,
+          end: Math.max(item.startMonth!, item.endMonth!),
+        }
+      : derived;
+    const amount = itemAmount(item);
     const monthly = new Array<number>(N).fill(0);
     if (timing.phasing === 'lump') {
       if (timing.start >= 1 && timing.start <= N) monthly[timing.start - 1] = amount;
@@ -362,14 +366,14 @@ export function runModel(a: Assumptions): ModelOutput {
     } else if (timing.phasing === 'curve') {
       for (let k = 0; k < curve.length; k++) {
         const m = HS + k;
-        if (m >= 1 && m <= N) monthly[m - 1] = (curve[k] / 100) * gcContractTotal;
+        if (m >= 1 && m <= N) monthly[m - 1] = (curve[k] / 100) * amount;
       }
     }
     budgetRows.push({
-      key: code,
-      code,
-      category: categoryForCode(code.replace(/[ab]$/, '')),
-      label: rowLabelByCode[code] ?? code,
+      key: item.id,
+      code: item.code,
+      category: categoryForCode(item.code.replace(/[ab]$/, '')),
+      label: item.label,
       amount,
       perUnit: units > 0 ? amount / units : 0,
       perNrsf: nrsf > 0 ? amount / nrsf : 0,
@@ -381,7 +385,12 @@ export function runModel(a: Assumptions): ModelOutput {
     });
   }
 
-  const gcDraws = budgetRows.find((r) => r.code === '200202')!.monthly;
+  const gcDraws = new Array<number>(N).fill(0);
+  for (const row of budgetRows) {
+    if (row.code === '200202') {
+      for (let i = 0; i < N; i++) gcDraws[i] += row.monthly[i];
+    }
+  }
 
   /* ------------------ Stage 6 (property tax, pre-solve) ------------------ */
   const effTaxRate = sum(a.taxes.jurisdictions.map((j) => j.millageRate)) / 100;

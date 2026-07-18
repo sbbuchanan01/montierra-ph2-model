@@ -123,6 +123,17 @@ export default function TaxesPage() {
                   <Td><Money v={t.stabilizedTaxesDue} colored /></Td>
                 </tr>
               ))}
+              <tr className="border-t border-slate-300 font-semibold">
+                <Td right={false}>Total</Td>
+                <Td />
+                <Td />
+                <Td />
+                <Td><Money v={m.taxes.reduce((s, t) => s + t.taxesDueDuringConstruction, 0)} colored /></Td>
+                <Td />
+                <Td />
+                <Td />
+                <Td><Money v={m.taxes.reduce((s, t) => s + t.stabilizedTaxesDue, 0)} colored /></Td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -152,6 +163,14 @@ export default function TaxesPage() {
                   <Td>{fmtMoney(t.stateTaxDue)}</Td>
                 </tr>
               ))}
+              <tr className="border-t border-slate-300 font-semibold">
+                <Td right={false}>Total</Td>
+                <Td><Money v={m.taxes.reduce((s, t) => s + t.taxableNoi, 0)} /></Td>
+                <Td><Money v={-m.taxes.reduce((s, t) => s + t.interestExpense, 0)} colored /></Td>
+                <Td><Money v={m.taxes.reduce((s, t) => s + t.depreciation, 0)} colored /></Td>
+                <Td><Money v={m.taxes.reduce((s, t) => s + t.taxableIncome, 0)} /></Td>
+                <Td>{fmtMoney(m.taxes.reduce((s, t) => s + t.stateTaxDue, 0))}</Td>
+              </tr>
             </tbody>
           </table>
         </div>
