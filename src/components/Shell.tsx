@@ -7,7 +7,7 @@ import { useActiveProject, useModel, useModelStore } from '@/store/useModelStore
 import { fmtMoney, fmtPct, fmtX } from '@/lib/format';
 
 const NAV: { href: string; label: string }[] = [
-  { href: '/', label: 'Summary' },
+  { href: '/summary', label: 'Summary' },
   { href: '/assumptions/unit-mix', label: 'Unit Mix' },
   { href: '/assumptions/leasing', label: 'Leasing' },
   { href: '/assumptions/costs', label: 'Costs' },
@@ -19,9 +19,10 @@ const NAV: { href: string; label: string }[] = [
   { href: '/taxes', label: 'Taxes' },
   { href: '/comps', label: 'Comps' },
   { href: '/export', label: 'Export' },
-  { href: '/compare', label: 'Compare' },
-  { href: '/projects', label: 'Projects' },
 ];
+
+/** Deals list and per-deal scenario dashboards — no single working model in focus. */
+const isDashboard = (path: string) => path === '/' || path.startsWith('/deals/');
 
 /** Renders children once the local store hydrates AND server state loads. */
 function Ready({ children }: { children: ReactNode }) {
@@ -32,7 +33,7 @@ function Ready({ children }: { children: ReactNode }) {
     void useModelStore.getState().init();
   }, []);
   if (!hydrated || !loaded) {
-    return <div className="p-10 text-sm text-slate-400">Loading projects from Supabase…</div>;
+    return <div className="p-10 text-sm text-slate-400">Loading deals from Supabase…</div>;
   }
   return <>{children}</>;
 }
@@ -83,7 +84,7 @@ function ProjectBar() {
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Project</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Deal</span>
           <select
             className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-800"
             value={project.id}
@@ -171,10 +172,65 @@ function ProjectBar() {
   );
 }
 
+function DashboardHeader() {
+  const project = useActiveProject();
+  const activeScenarioId = useModelStore((s) => s.activeScenarioId);
+  const dirty = useModelStore((s) => s.dirty);
+  const syncError = useModelStore((s) => s.syncError);
+  const scenarioName =
+    activeScenarioId === null ? 'Base case' : project?.scenarios.find((sc) => sc.id === activeScenarioId)?.name;
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-xs font-bold text-white">DM</span>
+          <span className="text-sm font-semibold text-slate-900">Development Models</span>
+        </Link>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {project && (
+            <Link
+              href="/summary"
+              className="rounded-md px-3 py-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              title="Return to the model you were working in"
+            >
+              Resume <span className="font-medium text-slate-900">{project.name}</span> · {scenarioName}
+              {dirty && <span className="ml-1 text-amber-600">●</span>} →
+            </Link>
+          )}
+          <button className={barBtn} onClick={() => void useModelStore.getState().signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+      {syncError && (
+        <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700">
+          Sync error: {syncError}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  if (pathname === '/login') {
+  if (pathname === '/login' || pathname === '/reset-password') {
     return <div className="min-h-screen bg-slate-100">{children}</div>;
+  }
+  if (isDashboard(pathname)) {
+    return (
+      <div className="min-h-screen bg-slate-100">
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto max-w-7xl px-4">
+            <Ready>
+              <DashboardHeader />
+            </Ready>
+          </div>
+        </header>
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <Ready>{children}</Ready>
+        </main>
+      </div>
+    );
   }
   return (
     <div className="min-h-screen bg-slate-100">
@@ -195,8 +251,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </Ready>
           <nav className="mt-1.5 flex gap-0.5 overflow-x-auto">
             {NAV.map((item) => {
-              const active =
-                item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+              const active = pathname.startsWith(item.href);
               return (
                 <Link
                   key={item.href}
@@ -211,6 +266,9 @@ export function Shell({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
+            <Ready>
+              <ScenariosNavLink />
+            </Ready>
           </nav>
         </div>
       </header>
@@ -221,13 +279,35 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Last tab: back to the open deal's dashboard, where its scenarios are listed and compared. */
+function ScenariosNavLink() {
+  const project = useActiveProject();
+  if (!project) return null;
+  return (
+    <Link
+      href={`/deals/${project.id}`}
+      className="whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+    >
+      Scenarios ({project.scenarios.length + 1})
+    </Link>
+  );
+}
+
 function ProjectTitle() {
   const project = useActiveProject();
   const location = project ? [project.city, project.state].filter(Boolean).join(', ') : '';
   const sub = [location, project?.constructionType].filter(Boolean).join(' · ');
   return (
     <>
-      {project?.name ?? 'Development Model'}
+      <Link href="/" className="font-medium text-slate-400 hover:text-slate-700">Deals</Link>
+      <span className="mx-1.5 font-normal text-slate-300">/</span>
+      {project ? (
+        <Link href={`/deals/${project.id}`} className="hover:underline" title="Deal dashboard — all scenarios">
+          {project.name}
+        </Link>
+      ) : (
+        'Development Model'
+      )}
       <span className="ml-2 text-xs font-normal text-slate-400">{sub || 'Development model'}</span>
     </>
   );

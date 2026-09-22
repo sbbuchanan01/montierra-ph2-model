@@ -25,11 +25,13 @@ export interface ProjectMeta {
 export interface Project extends ProjectMeta {
   id: string;
   createdAt: string;
+  updatedAt: string;
   baseCase: Assumptions;
   scenarios: Scenario[];
 }
 
-export type ProjectTemplate = 'blank' | 'copy';
+/** 'blank' = zeroed assumptions; otherwise copy an existing deal's base case. */
+export type ProjectTemplate = 'blank' | { copyFrom: string };
 
 const clone = <T,>(v: T): T => structuredClone(v);
 
@@ -63,7 +65,12 @@ interface ModelStore {
   discard: () => void;
   switchScenario: (scenarioId: string | null) => void;
   switchProject: (projectId: string) => void;
-  createProject: (meta: ProjectMeta, template: ProjectTemplate) => Promise<void>;
+  /** Make a deal + scenario (null = base case) the working draft. */
+  openScenario: (projectId: string, scenarioId: string | null) => void;
+  /** Returns the new project's id, or null if the insert failed. */
+  createProject: (meta: ProjectMeta, template: ProjectTemplate) => Promise<string | null>;
+  /** Adds a scenario to any deal, copied from its base case (null) or another scenario. Does not touch the draft. */
+  createScenario: (projectId: string, name: string, fromScenarioId: string | null) => Promise<string | null>;
   updateProjectMeta: (projectId: string, patch: Partial<ProjectMeta>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   renameScenario: (scenarioId: string, name: string) => Promise<void>;
@@ -85,7 +92,7 @@ async function fetchProjects(): Promise<Project[]> {
   const [projectsRes, scenariosRes] = await Promise.all([
     supabase
       .from('montierra_projects')
-      .select('id,name,city,state,construction_type,created_at,base_case')
+      .select('id,name,city,state,construction_type,created_at,updated_at,base_case')
       .order('created_at'),
     supabase.from('montierra_scenarios').select('id,project_id,name,saved_at,assumptions').order('saved_at'),
   ]);
@@ -98,6 +105,7 @@ async function fetchProjects(): Promise<Project[]> {
     state: (p.state as string) ?? '',
     constructionType: (p.construction_type as string) ?? '',
     createdAt: p.created_at as string,
+    updatedAt: (p.updated_at as string) ?? (p.created_at as string),
     baseCase: p.base_case as Assumptions,
     scenarios: (scenariosRes.data ?? [])
       .filter((sc) => sc.project_id === p.id)
@@ -174,6 +182,7 @@ export const useModelStore = create<ModelStore>()(
                         state: 'TX',
                         constructionType: 'Surface MF',
                         createdAt: '',
+                        updatedAt: '',
                         baseCase: DEFAULT_ASSUMPTIONS,
                         scenarios: [],
                       },
@@ -245,11 +254,11 @@ export const useModelStore = create<ModelStore>()(
               dirty: false,
               projects: get().projects.map((p) => {
                 if (p.id !== s.activeProjectId) return p;
-                if (s.activeScenarioId === null) return { ...p, baseCase: draft };
+                if (s.activeScenarioId === null) return { ...p, baseCase: draft, updatedAt: new Date().toISOString() };
                 return {
                   ...p,
                   scenarios: p.scenarios.map((sc) =>
-                    sc.id === s.activeScenarioId ? { ...sc, assumptions: draft } : sc,
+                    sc.id === s.activeScenarioId ? { ...sc, assumptions: draft, savedAt: new Date().toISOString() } : sc,
                   ),
                 };
               }),
@@ -300,7 +309,7 @@ export const useModelStore = create<ModelStore>()(
               dirty: false,
               activeScenarioId: null,
               projects: get().projects.map((p) =>
-                p.id === s.activeProjectId ? { ...p, baseCase: draft } : p,
+                p.id === s.activeProjectId ? { ...p, baseCase: draft, updatedAt: new Date().toISOString() } : p,
               ),
             });
           });
@@ -331,14 +340,27 @@ export const useModelStore = create<ModelStore>()(
             };
           }),
 
+        openScenario: (projectId, scenarioId) =>
+          set((s) => {
+            const project = s.projects.find((p) => p.id === projectId);
+            if (!project) return s;
+            const id = scenarioId !== null && project.scenarios.some((sc) => sc.id === scenarioId) ? scenarioId : null;
+            return {
+              activeProjectId: projectId,
+              activeScenarioId: id,
+              dirty: false,
+              assumptions: clone(savedSnapshot(project, id)),
+            };
+          }),
+
         createProject: async (meta, template) => {
-          const s = get();
-          const baseCase =
-            template === 'blank'
-              ? makeBlankAssumptions(meta.name)
-              : { ...clone(s.assumptions), project: { ...clone(s.assumptions.project), name: meta.name } };
+          const source = template === 'blank' ? undefined : get().projects.find((p) => p.id === template.copyFrom);
+          const baseCase = source
+            ? { ...clone(source.baseCase), project: { ...clone(source.baseCase.project), name: meta.name } }
+            : makeBlankAssumptions(meta.name);
           baseCase.project.location = [meta.city, meta.state].filter(Boolean).join(', ');
           baseCase.project.productType = meta.constructionType;
+          let newId: string | null = null;
           await sync(async () => {
             const supabase = createClient();
             const { data: row, error } = await supabase
@@ -353,10 +375,12 @@ export const useModelStore = create<ModelStore>()(
               .select('id,created_at')
               .single();
             if (error) throw new Error(error.message);
+            newId = row.id as string;
             const project: Project = {
               id: row.id as string,
               ...meta,
               createdAt: row.created_at as string,
+              updatedAt: row.created_at as string,
               baseCase,
               scenarios: [],
             };
@@ -368,6 +392,31 @@ export const useModelStore = create<ModelStore>()(
               assumptions: clone(baseCase),
             });
           });
+          return newId;
+        },
+
+        createScenario: async (projectId, name, fromScenarioId) => {
+          const project = get().projects.find((p) => p.id === projectId);
+          if (!project) return null;
+          const assumptions = clone(savedSnapshot(project, fromScenarioId));
+          let newId: string | null = null;
+          await sync(async () => {
+            const supabase = createClient();
+            const { data: row, error } = await supabase
+              .from('montierra_scenarios')
+              .insert({ project_id: projectId, name, assumptions })
+              .select('id,saved_at')
+              .single();
+            if (error) throw new Error(error.message);
+            newId = row.id as string;
+            const scenario: Scenario = { id: newId, name, savedAt: row.saved_at as string, assumptions };
+            set({
+              projects: get().projects.map((p) =>
+                p.id === projectId ? { ...p, scenarios: [...p.scenarios, scenario] } : p,
+              ),
+            });
+          });
+          return newId;
         },
 
         updateProjectMeta: async (projectId, patch) => {
@@ -485,6 +534,7 @@ export const useModelStore = create<ModelStore>()(
               state: p.state ?? '',
               constructionType: p.constructionType ?? '',
               createdAt: p.createdAt ?? '',
+              updatedAt: p.updatedAt ?? '',
               baseCase: p.baseCase ?? DEFAULT_ASSUMPTIONS,
               scenarios: p.scenarios ?? [],
             }));
@@ -497,6 +547,7 @@ export const useModelStore = create<ModelStore>()(
                 state: 'TX',
                 constructionType: 'Surface MF',
                 createdAt: '',
+                updatedAt: '',
                 baseCase: old.assumptions,
                 scenarios: [],
               },

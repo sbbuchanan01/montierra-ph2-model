@@ -1,267 +1,190 @@
-﻿'use client';
+'use client';
 
-import { Card, StatCard, Th, Td, Money } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
-import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
-import {
-  ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid,
-} from 'recharts';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Field, Note, StatCard } from '@/components/ui';
+import { Kpi, Pill, btn, fmtShort, fmtUpdated, inputCls, useGuardDirty } from '@/components/deals';
+import { tryRunModel, useModelStore, type ProjectMeta } from '@/store/useModelStore';
+import { fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
 
-export default function DealSummaryPage() {
-  const m = useModel();
-  const a = useModelStore((s) => s.assumptions);
+const emptyMeta: ProjectMeta = { name: '', city: '', state: '', constructionType: '' };
 
-  const uses = [
-    { name: 'Land', value: m.budget.landTotal },
-    { name: 'Hard Costs', value: m.budget.hardCostTotal },
-    {
-      name: 'Soft Costs (Consultants, Etc.)',
-      value: m.budget.softCostConsultants + m.budget.softCostMarketing + m.budget.softCostMunicipal,
-    },
-    { name: 'Soft Costs (Financing)', value: m.budget.softCostFinancing },
-    { name: 'Soft Costs (Operating, G&A)', value: m.budget.softCostOperating + m.budget.softCostGa },
-  ];
+export default function DealsPage() {
+  const projects = useModelStore((s) => s.projects);
+  const activeProjectId = useModelStore((s) => s.activeProjectId);
+  const dirty = useModelStore((s) => s.dirty);
+  const router = useRouter();
+  const guardDirty = useGuardDirty();
 
-  let cum = 0;
-  const cumCf = m.monthly
-    .filter((r) => r.month <= m.sale.month + 6)
-    .map((r) => {
-      cum += r.projectCashFlow;
-      return { month: r.month, cum: Math.round(cum) };
-    });
+  const [showCreate, setShowCreate] = useState(false);
+  const [meta, setMeta] = useState<ProjectMeta>(emptyMeta);
+  const [template, setTemplate] = useState<string>('blank');
+  const [busy, setBusy] = useState(false);
 
-  const milestones: [string, number, string][] = [
-    ['Land Closing', a.schedule.landClosingMonth, m.monthly[a.schedule.landClosingMonth - 1]?.date ?? ''],
-    ['Construction Start', a.schedule.softCostStartMonth, m.monthly[a.schedule.softCostStartMonth - 1]?.date ?? ''],
-    ['Construction Complete', m.constructionEndMonth, m.monthly[m.constructionEndMonth - 1]?.date ?? ''],
-    ['Lease-Up Start', a.schedule.leaseUpStartMonth, m.monthly[a.schedule.leaseUpStartMonth - 1]?.date ?? ''],
-    ['Stabilization', m.leaseUpEndMonth, m.stabilizationDate],
-    ['Sale', m.sale.month, m.sale.date],
-  ];
+  const rows = useMemo(
+    () =>
+      projects
+        .map((p) => ({ project: p, m: tryRunModel(p.baseCase) }))
+        .sort((a, b) => (b.project.updatedAt || '').localeCompare(a.project.updatedAt || '')),
+    [projects],
+  );
 
-  const u = m.operatingYield.untrended;
+  const totals = rows.reduce(
+    (t, { m }) =>
+      m
+        ? {
+            units: t.units + m.totalUnits,
+            cost: t.cost + m.budget.totalGross,
+            equity: t.equity + m.financing.equityCommitment,
+            profit: t.profit + (m.returns.totalDistributions - m.returns.totalEquityInvested),
+          }
+        : t,
+    { units: 0, cost: 0, equity: 0, profit: 0 },
+  );
+  const scenarioCount = projects.reduce((n, p) => n + p.scenarios.length, 0);
+
+  const create = async () => {
+    if (!meta.name.trim() || !guardDirty()) return;
+    setBusy(true);
+    const id = await useModelStore
+      .getState()
+      .createProject({ ...meta, name: meta.name.trim() }, template === 'blank' ? 'blank' : { copyFrom: template });
+    setBusy(false);
+    if (!id) return;
+    setMeta(emptyMeta);
+    setShowCreate(false);
+    router.push(`/deals/${id}`);
+  };
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-        <StatCard label="Total Project Cost" value={fmtMoney(m.budget.totalGross)} sub={`${fmtMoney(m.budget.totalGross / m.totalUnits)} / unit`} />
-        <StatCard label="Construction Loan" value={fmtMoney(m.financing.loanAmount)} sub={`${fmtPct(a.financing.construction.ltc, 1)} LTC`} />
-        <StatCard label="Total Equity" value={fmtMoney(m.financing.equityCommitment)} sub={`GP ${fmtMoney(m.financing.gpEquity)} · LP ${fmtMoney(m.financing.lpEquity)}`} />
-        <StatCard label="Net Sale Proceeds" value={fmtMoney(m.sale.netSaleProceeds)} sub={`Sale ${fmtDate(m.sale.date)} @ ${fmtPct(a.exit.mfCapRate, 2)} cap`} />
-        <StatCard label="Project XIRR" value={fmtPct(m.returns.projectXirr)} sub={`MOIC ${fmtX(m.returns.projectMoic)}`} accent />
-        <StatCard label="Untrended ROC" value={fmtPct(u.returnOnCostGross)} sub={`DY ${fmtPct(u.debtYield)} · DSCR ${fmtX(u.dscr)}`} />
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card title="Sources & Uses" subtitle={`Uses total ${fmtMoney(m.budget.totalGross)}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <Th right={false}>Uses</Th>
-                  <Th>Amount</Th>
-                  <Th>$ / Unit</Th>
-                  <Th>%</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {uses.map((row) => (
-                  <tr key={row.name} className="border-t border-slate-100">
-                    <Td right={false} className="text-slate-600">{row.name}</Td>
-                    <Td><Money v={row.value} /></Td>
-                    <Td className="text-slate-500">{fmtMoney(row.value / Math.max(1, m.totalUnits))}</Td>
-                    <Td className="text-slate-400">{fmtPct(row.value / m.budget.totalGross, 1)}</Td>
-                  </tr>
-                ))}
-                <tr className="border-t border-slate-300 font-semibold">
-                  <Td right={false}>Total Uses (gross)</Td>
-                  <Td><Money v={m.budget.totalGross} /></Td>
-                  <Td>{fmtMoney(m.budget.totalGross / Math.max(1, m.totalUnits))}</Td>
-                  <Td className="text-slate-400">100.0%</Td>
-                </tr>
-                <tr className="border-t border-slate-200">
-                  <Td right={false} className="pt-3 text-slate-600">Construction Loan</Td>
-                  <Td className="pt-3"><Money v={m.financing.loanAmount} /></Td>
-                  <Td className="pt-3 text-slate-500">{fmtMoney(m.financing.loanAmount / Math.max(1, m.totalUnits))}</Td>
-                  <Td className="pt-3 text-slate-400">{fmtPct(a.financing.construction.ltc, 1)}</Td>
-                </tr>
-                <tr className="border-t border-slate-100">
-                  <Td right={false} className="text-slate-600">Equity</Td>
-                  <Td><Money v={m.financing.equityCommitment} /></Td>
-                  <Td className="text-slate-500">{fmtMoney(m.financing.equityCommitment / Math.max(1, m.totalUnits))}</Td>
-                  <Td className="text-slate-400">{fmtPct(1 - a.financing.construction.ltc, 1)}</Td>
-                </tr>
-                <tr className="border-t border-slate-300 font-semibold">
-                  <Td right={false}>Total Capital Sources</Td>
-                  <Td><Money v={m.financing.loanAmount + m.financing.equityCommitment} /></Td>
-                  <Td>{fmtMoney((m.financing.loanAmount + m.financing.equityCommitment) / Math.max(1, m.totalUnits))}</Td>
-                  <Td className="text-slate-400">100.0%</Td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card title="Cumulative Equity Cash Flow" subtitle="Project (pre-promote) cash flow to/from equity">
-          <div className="h-72">
-            <ResponsiveContainer>
-              <LineChart data={cumCf} margin={{ left: 10, right: 10, top: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={(v) => `M${v}`} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`} width={52} />
-                <Tooltip formatter={(v) => fmtMoney(Number(v))} labelFormatter={(l) => `Month ${l}`} />
-                <Line type="monotone" dataKey="cum" stroke="#0f2a43" strokeWidth={2} dot={false} name="Cumulative CF" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-slate-400">Contributions</div>
-              <div className="text-sm font-bold tabular-nums">{fmtMoney(m.returns.totalEquityInvested)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-slate-400">Distributions</div>
-              <div className="text-sm font-bold tabular-nums">{fmtMoney(m.returns.totalDistributions)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-slate-400">Profit</div>
-              <div className="text-sm font-bold tabular-nums text-emerald-700">
-                {fmtMoney(m.returns.totalDistributions - m.returns.totalEquityInvested)}
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <div className="space-y-5">
-          <Card title="Project Schedule">
-            <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <Th right={false}>Milestone</Th>
-                  <Th>Month</Th>
-                  <Th>Date</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {milestones.map(([label, month, date]) => (
-                  <tr key={label} className="border-t border-slate-100">
-                    <Td right={false} className="text-slate-700">{label}</Td>
-                    <Td>{month}</Td>
-                    <Td>{date ? fmtDate(date) : 'â€”'}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          </Card>
-          <Card title="Unit Mix Summary" subtitle={`${fmtNum(m.totalUnits)} units · ${fmtNum(m.totalNrsf)} SF · avg rent ${fmtMoney(m.avgRent)}/mo`}>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <Th right={false}>Type</Th>
-                    <Th>Units</Th>
-                    <Th>Avg SF</Th>
-                    <Th>Rent</Th>
-                    <Th>PSF</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {a.unitMix.filter((r) => r.count > 0).map((r) => (
-                    <tr key={r.id} className="border-t border-slate-100">
-                      <Td right={false}>{r.unitType}</Td>
-                      <Td>{r.count}</Td>
-                      <Td>{fmtNum(r.avgSf)}</Td>
-                      <Td>{fmtMoney(r.avgSf * r.rentPsf)}</Td>
-                      <Td>${r.rentPsf.toFixed(2)}</Td>
-                    </tr>
-                  ))}
-                  <tr className="border-t border-slate-300 font-semibold">
-                    <Td right={false}>Total / Average</Td>
-                    <Td>{fmtNum(m.totalUnits)}</Td>
-                    <Td>{fmtNum(m.totalUnits > 0 ? m.totalNrsf / m.totalUnits : 0)}</Td>
-                    <Td>{fmtMoney(m.avgRent)}</Td>
-                    <Td>
-                      ${(m.totalNrsf > 0 ? (m.avgRent * m.totalUnits) / m.totalNrsf : 0).toFixed(2)}
-                    </Td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </Card>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Deals</h1>
+          <p className="text-sm text-slate-500">Multifamily development models — each deal holds a base case and any number of scenarios</p>
         </div>
+        <button className={btn.primary} onClick={() => setShowCreate((v) => !v)}>
+          {showCreate ? 'Cancel' : '＋ New deal'}
+        </button>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="Value Creation" subtitle="Sale waterfall at exit">
-          <table className="w-full">
-            <tbody>
-              {(
-                [
-                  [`MF Sale Price (F-12 NOI ${fmtMoney(m.sale.forwardNoiMf)} / ${fmtPct(a.exit.mfCapRate)} cap)`, m.sale.mfSalePrice],
-                  ['Retail Sale Price', m.sale.retailSalePrice],
-                  [`Less: Closing Costs (${fmtPct(a.exit.closingCostPct, 1)})`, m.sale.closingCosts],
-                  ['Less: State Tax Liability', -m.sale.stateTaxOnSale],
-                  ['Less: Loan Balance', -m.sale.loanBalanceRetired],
-                  ['Net Sale Proceeds', m.sale.netSaleProceeds],
-                  ['Less: Equity Return', -m.financing.equityCommitment],
-                  ['Net Profit from Sale', m.sale.netProfitFromSale],
-                ] as [string, number][]
-              ).map(([label, v], i) => (
-                <tr key={label} className={`border-t border-slate-100 ${i >= 5 ? 'font-semibold' : ''}`}>
-                  <Td right={false} className="text-slate-700">{label}</Td>
-                  <Td><Money v={v} colored /></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-
-        <Card title="Key Financial Metrics">
-          <table className="w-full">
-            <thead>
-              <tr>
-                <Th right={false} />
-                <Th>Project</Th>
-                <Th>JV Partner (LP)</Th>
-                <Th>Sponsor (GP)</Th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t border-slate-100">
-                <Td right={false} className="text-slate-600">Contributions</Td>
-                <Td><Money v={m.waterfall.totalEquity} /></Td>
-                <Td><Money v={m.waterfall.lpEquity} /></Td>
-                <Td><Money v={m.waterfall.gpEquity} /></Td>
-              </tr>
-              <tr className="border-t border-slate-100">
-                <Td right={false} className="text-slate-600">Profits</Td>
-                <Td><Money v={m.waterfall.lpNetCashFlow + m.waterfall.gpNetCashFlow} colored /></Td>
-                <Td><Money v={m.waterfall.lpNetCashFlow} colored /></Td>
-                <Td><Money v={m.waterfall.gpNetCashFlow} colored /></Td>
-              </tr>
-              <tr className="border-t border-slate-100">
-                <Td right={false} className="text-slate-600">XIRR</Td>
-                <Td>{fmtPct(m.waterfall.projectIrr)}</Td>
-                <Td>{fmtPct(m.waterfall.lpIrr)}</Td>
-                <Td>{fmtPct(m.waterfall.gpIrr)}</Td>
-              </tr>
-              <tr className="border-t border-slate-100">
-                <Td right={false} className="text-slate-600">MOIC</Td>
-                <Td>{fmtX(m.waterfall.projectMoic)}</Td>
-                <Td>{fmtX(m.waterfall.lpMoic)}</Td>
-                <Td>{fmtX(m.waterfall.gpMoic)}</Td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="mt-4 border-t border-slate-200 pt-3 text-xs text-slate-500">
-            Iterative solve converged in {m.iterations} passes · capitalized construction interest{' '}
-            {fmtMoney(m.financing.capitalizedInterest)} · first loan draw month {m.financing.firstDrawMonth}
+      {showCreate && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-3 text-sm font-semibold text-slate-900">New deal</h3>
+          <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-6">
+            <div className="col-span-2 md:col-span-1">
+              <Field label="Deal name">
+                <input
+                  className={inputCls}
+                  autoFocus
+                  value={meta.name}
+                  placeholder="e.g. Montierra Ph. III"
+                  onChange={(e) => setMeta({ ...meta, name: e.target.value })}
+                  onKeyDown={(e) => e.key === 'Enter' && void create()}
+                />
+              </Field>
+            </div>
+            <Field label="City">
+              <input className={inputCls} value={meta.city} onChange={(e) => setMeta({ ...meta, city: e.target.value })} />
+            </Field>
+            <Field label="State">
+              <input className={inputCls} value={meta.state} onChange={(e) => setMeta({ ...meta, state: e.target.value })} />
+            </Field>
+            <Field label="Construction type">
+              <input
+                className={inputCls}
+                value={meta.constructionType}
+                placeholder="e.g. Surface MF"
+                onChange={(e) => setMeta({ ...meta, constructionType: e.target.value })}
+              />
+            </Field>
+            <Field label="Start from">
+              <select className={inputCls} value={template} onChange={(e) => setTemplate(e.target.value)}>
+                <option value="blank">Blank assumptions</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Copy of {p.name} (base case)
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <button className={btn.primary} disabled={!meta.name.trim() || busy} onClick={() => void create()}>
+              {busy ? 'Creating…' : 'Create deal'}
+            </button>
           </div>
-        </Card>
+          <p className="mt-2 text-xs text-slate-500">
+            &ldquo;Blank assumptions&rdquo; keeps the full model structure (cost line items, rate conventions, schedule
+            mechanics) but zeroes unit counts, rents and every cost dollar. Copying a deal duplicates its saved base
+            case only — add scenarios on the new deal&rsquo;s dashboard.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Deals" value={fmtNum(projects.length)} sub={`${scenarioCount} saved scenario${scenarioCount === 1 ? '' : 's'}`} />
+        <StatCard label="Units" value={fmtNum(totals.units)} sub="Base cases, all deals" />
+        <StatCard label="Total Project Cost" value={fmtShort(totals.cost)} sub={`Equity ${fmtShort(totals.equity)}`} />
+        <StatCard label="Projected Profit" value={fmtShort(totals.profit)} sub={totals.equity > 0 ? `${fmtX(1 + totals.profit / totals.equity)} on equity` : undefined} accent />
       </div>
+
+      <section>
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Pipeline</h2>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map(({ project: p, m }) => {
+            const location = [p.city, p.state].filter(Boolean).join(', ');
+            const isActive = p.id === activeProjectId;
+            return (
+              <Link
+                key={p.id}
+                href={`/deals/${p.id}`}
+                className="group block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-semibold text-slate-900 group-hover:underline">{p.name}</h3>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                      {[location, p.constructionType].filter(Boolean).join(' · ') || 'No location set'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                    {isActive && dirty && <Pill tone="amber">Unsaved</Pill>}
+                    {isActive && <Pill tone="green">Open</Pill>}
+                    <Pill tone="navy">
+                      {p.scenarios.length + 1} case{p.scenarios.length === 0 ? '' : 's'}
+                    </Pill>
+                  </div>
+                </div>
+                {m ? (
+                  m.totalUnits > 0 ? (
+                    <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-3 text-sm">
+                      <Kpi label="Total cost" value={fmtShort(m.budget.totalGross)} sub={`${fmtShort(m.budget.totalGross / m.totalUnits)}/unit`} />
+                      <Kpi label="Units" value={fmtNum(m.totalUnits)} sub={`${fmtNum(m.totalNrsf)} NRSF`} />
+                      <Kpi label="Project XIRR" value={fmtPct(m.returns.projectXirr, 1)} sub={`${fmtX(m.returns.projectMoic)} MOIC`} />
+                      <Kpi label="Equity" value={fmtShort(m.financing.equityCommitment)} sub={`Loan ${fmtShort(m.financing.loanAmount)}`} />
+                      <Kpi label="Untrended ROC" value={fmtPct(m.operatingYield.untrended.returnOnCostGross)} sub={`DY ${fmtPct(m.operatingYield.untrended.debtYield, 1)}`} />
+                      <Kpi label="LP IRR" value={fmtPct(m.waterfall.lpIrr, 1)} sub={`Profit ${fmtShort(m.returns.totalDistributions - m.returns.totalEquityInvested)}`} />
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-500">No units yet — open the deal and fill in the unit mix and budget.</p>
+                  )
+                ) : (
+                  <p className="mt-4 text-sm text-red-600">Model error — open the deal to fix inputs.</p>
+                )}
+                <div className="mt-4 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Base case · updated {fmtUpdated(p.updatedAt)}</span>
+                  {m && m.totalUnits > 0 && <span>Cost {fmtMoney(m.budget.totalGross)}</span>}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <Note>
+        Deals and scenarios are stored in Supabase and shared by all partner accounts. Card figures are each deal&rsquo;s
+        saved base case; open a deal to see and compare its scenarios.
+      </Note>
     </div>
   );
 }
-
