@@ -3,7 +3,8 @@
  * rent) as scenario assumptions on top of the base case.
  * Sources (G:\My Drive\Montierra Ph II\Analysis):
  *   16 units — 2026.9.22 ... v4 (16 units).xlsx (no longer in the folder; not revised on 9/23)
- *   10 units — 2026.9.23 ... v4 (10 units).xlsx (9/23 budget revisions on Detailed Cost Input)
+ *   10 units — 2026.9.23 ... v4 (10 units).xlsx (9/23 budget revisions on Detailed Cost Input), less the
+ *              duplicate FHA / ADA / TAS line under 300309 (F141) — a double count of 300310 per Stephen
  */
 import { DEFAULT_ASSUMPTIONS } from '../src/lib/model/defaults';
 import type { Assumptions, CostLineItem } from '../src/lib/model/types';
@@ -100,18 +101,6 @@ export function v4Assumptions({ units }: Program): Assumptions {
     amountType: 'fixed',
     value: 300_000,
   });
-  if (!is16) {
-    // 9.23 adds FHA / ADA / TAS under 300309 alongside the existing 300310 line (both $10,000).
-    const mtIdx = items.findIndex((i) => i.id === 'materials-testing');
-    items.splice(mtIdx + 1, 0, {
-      id: 'fha-ada-tas-309',
-      code: '300309',
-      group: 'Special Inspections & Testing',
-      label: 'FHA / ADA / TAS',
-      amountType: 'fixed',
-      value: 10_000,
-    });
-  }
   a.costs.lineItems = items;
   return a;
 }
