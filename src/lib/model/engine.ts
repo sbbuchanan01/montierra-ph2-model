@@ -479,7 +479,7 @@ export function runModel(a: Assumptions): ModelOutput {
     o.propTax = propTax;
     o.nonCtrl = propTax + o.mgmt + o.insurance;
     o.totalExp = o.ctrl + o.nonCtrl;
-    o.mfOpsCf = o.totalIncome - o.totalExp;
+    o.mfOpsCf = o.totalIncome - o.totalExp + (a.opex.deductReservesFromCashFlow ? o.reserves : 0);
     // Retail is fully parallel but zero for this deal; guard divide-by-zero.
     o.retailIncome = 0;
     o.retailExp = 0;

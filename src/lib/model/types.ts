@@ -120,6 +120,12 @@ export interface Assumptions {
     generalAdmin: number;
     insurance: number;
     capitalReserves: number;
+    /**
+     * Net capital reserves out of the MF operating cash flow (Monthly PF r186 =
+     * r163 - r182 + r185, as in the 13-mo v4 workbooks). Off/omitted = the
+     * original workbook, where reserves were presentation-only.
+     */
+    deductReservesFromCashFlow?: boolean;
     mgmtFeePct: number; // of total income
     mgmtFeeFloorPerMonth: number; // $1,500 floor
   };
