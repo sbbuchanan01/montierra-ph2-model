@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest';
+import { runModel } from '../engine';
+import { DEFAULT_ASSUMPTIONS } from '../defaults';
+import { v4Assumptions } from '../../../../scripts/v4-scenarios';
+import type { Assumptions } from '../types';
+
+const tpl = (a: Assumptions): Assumptions => ({ ...structuredClone(a), carryModel: 'template' });
+const cases: [string, Assumptions][] = [
+  ['base case', tpl(DEFAULT_ASSUMPTIONS)],
+  ['16-unit', tpl(v4Assumptions({ units: 16 }))],
+  ['10-unit TH', tpl(v4Assumptions({ units: 10 }))],
+];
+const amt = (o: ReturnType<typeof runModel>, code: string) =>
+  o.budget.rows.filter((r) => r.code === code).reduce((s, r) => s + r.amount, 0);
+
+describe.each(cases)('template carry model — %s', (_name, a) => {
+  const o = runModel(a);
+  const stab = o.leaseUpEndMonth;
+  const capYear = Math.ceil(stab / 12);
+
+  it('converges and sources equal uses', () => {
+    expect(o.converged).toBe(true);
+    const capex = o.monthly.reduce((s, r) => s + r.capex, 0);
+    const funded = o.monthly.reduce((s, r) => s + r.equityDraw + r.loanDraw, 0);
+    expect(capex).toBeCloseTo(o.budget.totalGross, 2);
+    expect(funded).toBeCloseTo(capex, 2);
+  });
+
+  it('capitalizes all construction interest through stabilization (paid current)', () => {
+    const expected = o.monthly
+      .filter((r) => r.month <= stab && r.month < o.sale.month)
+      .reduce((s, r) => s + r.loanInterest, 0);
+    expect(amt(o, '600614')).toBeCloseTo(expected, 2);
+  });
+
+  it('capitalizes construction-basis taxes for every year through the stabilization year', () => {
+    const expected = o.taxes
+      .filter((t) => t.analysisYear <= capYear)
+      .reduce((s, t) => s + t.taxableValueConstruction * o.effectiveTaxRate, 0);
+    expect(amt(o, '700703')).toBeCloseTo(expected, 2);
+  });
+
+  it('taxes NOI from first occupancy at the higher basis', () => {
+    const lu = a.schedule.leaseUpStartMonth;
+    for (const r of o.monthly.filter((x) => x.month >= lu).slice(0, 40)) {
+      const due = o.taxes[r.analysisYear - 1].stabilizedTaxesDue / 12;
+      expect(r.propertyTaxes).toBeCloseTo(due, 6);
+    }
+    expect(o.operatingYield.stabilized.propertyTaxes).toBeGreaterThan(0);
+  });
+
+  it('funds the lease-up deficit on NOI after the budget-funded tax add-back', () => {
+    const lu = a.schedule.leaseUpStartMonth;
+    let expected = 0;
+    for (const r of o.monthly) {
+      if (r.month > stab || r.month >= o.sale.month) continue;
+      const t = o.taxes[r.analysisYear - 1];
+      const addback = r.month >= lu && r.analysisYear <= capYear ? t.taxesDueDuringConstruction / 12 : 0;
+      expected += Math.max(0, -(r.totalIncome - r.totalExpenses + addback));
+    }
+    expect(amt(o, '700702')).toBeCloseTo(expected, 2);
+  });
+});

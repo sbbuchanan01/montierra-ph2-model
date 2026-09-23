@@ -56,6 +56,16 @@ export interface RetailTenant {
 }
 
 export interface Assumptions {
+  /**
+   * How construction interest, the lease-up deficit and property taxes are
+   * carried. Omitted / 'workbook' = the original 16-mo Montierra workbook.
+   * 'template' = the Multifamily Development Model TEMPLATE v2: interest paid
+   * current and capitalized through stabilization; lease-up deficit
+   * capitalized through stabilization; taxes per its Taxes tab (construction
+   * assessment vs. income approach, capitalized through the stabilization
+   * year, carried in NOI from first occupancy with a budget-funded add-back).
+   */
+  carryModel?: 'workbook' | 'template';
   project: {
     name: string;
     location: string;

@@ -461,6 +461,62 @@ export function runModel(a: Assumptions): ModelOutput {
     });
   }
 
+  // Template carry model (TEMPLATE v2 Taxes tab). Per model year:
+  //   construction basis = land x ratio + accrued improvements x ratio   (row 21 / 22)
+  //   income basis = (EGI - opex ex taxes & insurance) / (cap + tax rate)   (row 34 / 35)
+  //   taxes due = higher basis x rate                                       (row 41)
+  // Years through the stabilization year are capitalized at the construction basis;
+  // NOI carries taxes due from first occupancy, and the capitalized amount for those
+  // operating months is added back below NOI (the development draw funds it).
+  const template = a.carryModel === 'template';
+  const capYear = Math.ceil(LUF / 12);
+  const tplConstrTax = new Array<number>(NY + 1).fill(0);
+  const tplIncomeTax = new Array<number>(NY + 1).fill(0);
+  const tplTaxDue = new Array<number>(NY + 1).fill(0);
+  const taxAddback = new Array<number>(N).fill(0);
+  if (template) {
+    const improveByYear = new Array<number>(NY + 1).fill(0);
+    for (const row of budgetRows) {
+      if (row.code.startsWith('1001') || row.code.startsWith('6006')) continue;
+      for (let m = 1; m <= N; m++) improveByYear[yearOf(m)] += row.monthly[m - 1];
+    }
+    const noiPre = new Array<number>(NY + 1).fill(0);
+    for (let m = 1; m <= N; m++) {
+      noiPre[yearOf(m)] += preTax[m].totalIncome - (preTax[m].ctrlPlusIns - ops[m].insurance);
+    }
+    let accrued = 0;
+    taxYears.length = 0;
+    for (let y = 1; y <= NY; y++) {
+      accrued += improveByYear[y];
+      const constrTv = (landValue + accrued) * a.taxes.assessmentRatio;
+      const incomeTv = noiPre[y] / (a.taxes.mfBaseCapRate + effTaxRate);
+      tplConstrTax[y] = constrTv * effTaxRate;
+      tplIncomeTax[y] = incomeTv * effTaxRate;
+      tplTaxDue[y] = Math.max(constrTv, incomeTv) * effTaxRate;
+      interimByYear[y] = y <= capYear ? tplConstrTax[y] : 0;
+      taxYears.push({
+        analysisYear: y,
+        stabilizationYear: y < capYear ? 0 : y - capYear + 1,
+        operationYear: y < capYear ? 0 : y - capYear + 1,
+        improvementsAccrued: accrued,
+        taxableValueConstruction: constrTv,
+        taxesDueDuringConstruction: interimByYear[y],
+        noiBeforeTax: noiPre[y],
+        incomeApproachValue: incomeTv,
+        stabilizedTaxableValue: Math.max(constrTv, incomeTv),
+        stabilizedTaxesDue: tplTaxDue[y],
+        taxableNoi: 0,
+        depreciation: 0,
+        interestExpense: 0,
+        taxableIncome: 0,
+        stateTaxDue: 0,
+      });
+    }
+    for (let m = LU; m <= N; m++) {
+      if (m >= 1 && yearOf(m) <= capYear) taxAddback[m - 1] = tplConstrTax[yearOf(m)] / 12;
+    }
+  }
+
   // Second pass on ops: monthly property tax + totals.
   let lastPropTaxAnnual = 0;
   for (let m = 1; m <= N; m++) {
@@ -468,7 +524,9 @@ export function runModel(a: Assumptions): ModelOutput {
     const y = yearOf(m);
     const opYear = Math.ceil(opMonth[m] / 12);
     let propTax = 0;
-    if (leased[m] > 0) {
+    if (template) {
+      propTax = m >= LU ? tplTaxDue[Math.min(y, NY)] / 12 : 0;
+    } else if (leased[m] > 0) {
       if (y <= 10) {
         lastPropTaxAnnual = stabTaxesByOpYear.get(opYear) ?? 0;
         propTax = lastPropTaxAnnual / 12;
@@ -493,6 +551,15 @@ export function runModel(a: Assumptions): ModelOutput {
 
   const carryingMonthly = new Array<number>(N).fill(0);
   for (let m = 1; m <= N; m++) {
+    if (template) {
+      // Lease-up deficit through stabilization: negative NOI after the budget-funded tax add-back.
+      if (m <= LUF && m < SALE) {
+        const o = ops[m];
+        const noi = o.totalIncome - o.totalExp + o.retailNoi + taxAddback[m - 1];
+        carryingMonthly[m - 1] = Math.max(0, -noi);
+      }
+      continue;
+    }
     if (opMonth[m] > 0 && m < SALE) {
       const o = ops[m];
       carryingMonthly[m - 1] =
@@ -596,7 +663,10 @@ export function runModel(a: Assumptions): ModelOutput {
       // External construction interest cost (Monthly PF row 90).
       const mfCf = ops[m].mfOpsCf;
       let sf = 0;
-      if (m < SALE) {
+      if (template) {
+        // Paid current; every month through stabilization is a budgeted project cost.
+        sf = m <= LUF && m < SALE ? interest[i] : 0;
+      } else if (m < SALE) {
         if (mfCf > interest[i]) sf = 0;
         else if (mfCf > 0) sf = interest[i] - mfCf;
         else sf = interest[i];
@@ -605,8 +675,9 @@ export function runModel(a: Assumptions): ModelOutput {
 
       // Project contingency (2% of this month's qualifying draws, construction only).
       const feeThisMonth = m === LC ? originationFee : 0;
-      const baseThisMonth =
-        contingencyBaseStatic[i] + interimMonthly[i] + carryingMonthly[i] + feeThisMonth + sf;
+      const baseThisMonth = template
+        ? contingencyBaseStatic[i] + feeThisMonth
+        : contingencyBaseStatic[i] + interimMonthly[i] + carryingMonthly[i] + feeThisMonth + sf;
       contingency[i] = m <= CE ? contingencyPct * baseThisMonth : 0;
 
       capex[i] =
@@ -756,6 +827,7 @@ export function runModel(a: Assumptions): ModelOutput {
         interest[i] +
         shortfall[i] +
         ops[m].combinedOps +
+        taxAddback[i] +
         stateTaxMonthly[i] -
         balloon[i] -
         refiBalloon[i];
@@ -904,6 +976,7 @@ export function runModel(a: Assumptions): ModelOutput {
   const untrended = buildUntrendedYield(a, units, nrsf, totalCost, totalNet, loanAmount, {
     effTaxRate,
     taxableValueOpYear1: projectTvByYear[Math.min(luYearRounded + 1, NY)] ?? 0,
+    untrendedTaxes: template ? tplIncomeTax[Math.min(capYear, NY)] : undefined,
     rentedSpaces,
     storageMonthly,
   });
@@ -1024,6 +1097,7 @@ function buildUntrendedYield(
   ctx: {
     effTaxRate: number;
     taxableValueOpYear1: number;
+    untrendedTaxes?: number; // template: income-method taxes in the stabilization year
     rentedSpaces: number;
     storageMonthly: number;
   },
@@ -1063,7 +1137,7 @@ function buildUntrendedYield(
     'General / Admin': a.opex.generalAdmin * units,
   };
   const subtotalCtrl = sum(Object.values(controllable));
-  const propertyTaxes = ctx.taxableValueOpYear1 * ctx.effTaxRate;
+  const propertyTaxes = ctx.untrendedTaxes ?? ctx.taxableValueOpYear1 * ctx.effTaxRate;
   const mgmt = totalIncome * a.opex.mgmtFeePct;
   const insurance = a.opex.insurance * units;
   const subtotalNonCtrl = propertyTaxes + mgmt + insurance;

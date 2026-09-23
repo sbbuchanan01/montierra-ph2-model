@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Field, NumberInput, PctInput, Th, Td, Money, Note } from '@/components/ui';
+import { Card, Field, NumberInput, PctInput, Select, Th, Td, Money, Note } from '@/components/ui';
 import { useModel, useModelStore } from '@/store/useModelStore';
 import { fmtMoney, fmtPct } from '@/lib/format';
 
@@ -10,6 +10,8 @@ export default function TaxesPage() {
   const m = useModel();
 
   const T = a.taxes;
+  const template = a.carryModel === 'template';
+  const CARRY = ['Development template', 'Original workbook'] as const;
   const setT = (patch: Partial<typeof T>) => update((d) => ({ ...d, taxes: { ...d.taxes, ...patch } }));
   const setJur = (id: string, millageRate: number) =>
     update((d) => {
@@ -46,6 +48,18 @@ export default function TaxesPage() {
             </tbody>
           </table>
           <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <Field
+                label="Carry architecture (interest, lease-up deficit, taxes)"
+                hint="Development template = interest paid current and capitalized through stabilization; taxes capitalized through the stabilization year and carried in NOI from first occupancy"
+              >
+                <Select
+                  value={template ? CARRY[0] : CARRY[1]}
+                  onChange={(v) => update((d) => ({ ...d, carryModel: v === CARRY[0] ? 'template' : 'workbook' }))}
+                  options={CARRY}
+                />
+              </Field>
+            </div>
             <Field label="Construction assessment ratio">
               <PctInput value={T.assessmentRatio} onChange={(v) => setT({ assessmentRatio: v })} />
             </Field>
@@ -67,6 +81,28 @@ export default function TaxesPage() {
         <div className="space-y-5">
           <Card title="Methodology">
             <div className="space-y-2 text-sm leading-relaxed text-slate-600">
+              {template ? (
+                <>
+                  <p>
+                    <span className="font-semibold text-slate-900">Construction basis:</span> (land +
+                    accrued improvements) × {fmtPct(T.assessmentRatio, 0)}. Improvements are all project
+                    spend except land and financing costs.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Income approach:</span> (EGI − operating
+                    expenses excluding taxes and insurance) ÷ ({fmtPct(T.mfBaseCapRate, 2)} +{' '}
+                    {fmtPct(m.effectiveTaxRate, 3)}). Taxes due each year are on the higher of the two.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Capitalized:</span> every model year
+                    through the stabilization year, at the construction basis. NOI still carries taxes due
+                    from first occupancy (so return on cost is taxed); the capitalized amount for those
+                    months is added back below NOI — the development draw covers the first operating year
+                    as a lease-up hedge.
+                  </p>
+                </>
+              ) : (
+              <>
               <p>
                 <span className="font-semibold text-slate-900">During construction:</span> taxable value =
                 land value + {fmtPct(T.assessmentRatio, 0)} × cumulative accrued GC contract cost. Taxes are
@@ -79,6 +115,8 @@ export default function TaxesPage() {
                 &ldquo;loaded cap rate&rdquo; self-consistent assessment convention — floored at the
                 construction-method value.
               </p>
+              </>
+              )}
             </div>
           </Card>
           <Card title="Gain on Sale — stub">
