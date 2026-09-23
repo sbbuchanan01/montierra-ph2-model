@@ -2,6 +2,7 @@ import { addMonths, pmt, ppmt, xirr } from './finance';
 import { CURVE_TEMPLATES, sofrAtMonth } from './curves';
 import { categoryForCode } from './costData';
 import { runWaterfall } from './waterfall';
+import { DEFAULT_LOAN_SIZING } from './types';
 import type {
   AnnualSummaryRow,
   Assumptions,
@@ -580,6 +581,25 @@ export function runModel(a: Assumptions): ModelOutput {
   }
   const staticTotal = sum(staticMonthly);
 
+  // Template loan sizing: tests that don't depend on the budget are fixed before the solve.
+  const sz = a.financing.construction.sizing ?? DEFAULT_LOAN_SIZING;
+  let stabNoi = 0;
+  for (let m = LUF + 1; m <= Math.min(LUF + 12, N); m++) {
+    stabNoi += ops[m].totalIncome - ops[m].totalExp + ops[m].retailNoi;
+  }
+  const valueAtCompletion = sz.stabilizedCapRate > 0 ? stabNoi / sz.stabilizedCapRate : 0;
+  const ltvMax = sz.maxLtv * valueAtCompletion;
+  const dyMax = sz.minDebtYield > 0 ? stabNoi / sz.minDebtYield : 0;
+  const rDs = sz.dscrRate / 12;
+  const annuity = rDs > 0 ? (1 - Math.pow(1 + rDs, -sz.dscrAmortMonths)) / rDs : sz.dscrAmortMonths;
+  const dscrMax = sz.minDscr > 0 ? (stabNoi / sz.minDscr / 12) * annuity : 0;
+  // LTC basis = land + hard + soft: every static line except financing costs; project contingency added per iteration.
+  const ltcBasisStatic = sum(
+    budgetRows.filter((r) => !r.code.startsWith('6006')).map((r) => sum(r.monthly)),
+  );
+  let ltcBasis = ltcBasisStatic;
+  let ltcMax = 0;
+
   const fin = a.financing.construction;
   const contingencyPct = a.costs.projectContingencyPct;
 
@@ -625,7 +645,13 @@ export function runModel(a: Assumptions): ModelOutput {
 
   for (let iter = 0; iter < 80; iter++) {
     iterations = iter + 1;
-    loanAmount = fin.ltc * totalCost;
+    if (template) {
+      ltcBasis = ltcBasisStatic + sum(contingency);
+      ltcMax = fin.ltc * ltcBasis;
+      loanAmount = Math.max(0, Math.min(ltcMax, ltvMax, dyMax, dscrMax));
+    } else {
+      loanAmount = fin.ltc * totalCost;
+    }
     equityCommitment = totalCost - loanAmount;
     originationFee = fin.originationFeePct * loanAmount;
 
@@ -1042,6 +1068,25 @@ export function runModel(a: Assumptions): ModelOutput {
       ),
       totalInterest: sum(interest),
       capitalizedInterest: sum(shortfall),
+      sizing: template
+        ? {
+            stabilizedNoi: stabNoi,
+            valueAtCompletion,
+            ltcBasis,
+            ltc: ltcMax,
+            ltv: ltvMax,
+            debtYield: dyMax,
+            dscr: dscrMax,
+            binding:
+              loanAmount === ltcMax
+                ? 'Loan to Cost'
+                : loanAmount === ltvMax
+                  ? 'Loan to Value'
+                  : loanAmount === dyMax
+                    ? 'Debt Yield'
+                    : 'DSCR',
+          }
+        : undefined,
       refi: {
         enabled: refi.enabled,
         proceeds: refiProceeds,

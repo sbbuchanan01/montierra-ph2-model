@@ -4,6 +4,7 @@ import { Card, Field, NumberInput, PctInput, Select, Toggle, Th, Td, Money, Note
 import { useModel, useModelStore } from '@/store/useModelStore';
 import { fmtMoney, fmtPct } from '@/lib/format';
 import { SOFR_FORWARD_CURVE } from '@/lib/model/curves';
+import { DEFAULT_LOAN_SIZING, type LoanSizingInputs } from '@/lib/model/types';
 import {
   ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -17,6 +18,10 @@ export default function FinancingPage() {
   const R = a.financing.refinance;
   const setC = (patch: Partial<typeof C>) =>
     update((d) => ({ ...d, financing: { ...d.financing, construction: { ...d.financing.construction, ...patch } } }));
+  const template = a.carryModel === 'template';
+  const S = C.sizing ?? DEFAULT_LOAN_SIZING;
+  const setS = (patch: Partial<LoanSizingInputs>) => setC({ sizing: { ...S, ...patch } });
+  const Z = m.financing.sizing;
   const setR = (patch: Partial<typeof R>) =>
     update((d) => ({ ...d, financing: { ...d.financing, refinance: { ...d.financing.refinance, ...patch } } }));
 
@@ -33,7 +38,7 @@ export default function FinancingPage() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Construction Loan" subtitle={`${fmtMoney(m.financing.loanAmount)} · first draw month ${m.financing.firstDrawMonth} · total interest ${fmtMoney(m.financing.totalInterest)}`}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-            <Field label="LTC">
+            <Field label="LTC" hint={template ? 'On land + hard + soft costs' : 'On total project cost'}>
               <PctInput value={C.ltc} onChange={(v) => setC({ ltc: v })} step={0.5} />
             </Field>
             <Field label="Rate type">
@@ -80,6 +85,53 @@ export default function FinancingPage() {
             </Note>
           </div>
         </Card>
+
+        {template && Z && (
+          <Card title="Loan Sizing" subtitle={`Lesser of four tests · ${Z.binding} binds`}>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <Field label="Max LTV (value at completion)">
+                <PctInput value={S.maxLtv} onChange={(v) => setS({ maxLtv: v })} step={0.5} />
+              </Field>
+              <Field label="Stabilized cap rate" hint="Value at completion = stabilized NOI / cap">
+                <PctInput value={S.stabilizedCapRate} onChange={(v) => setS({ stabilizedCapRate: v })} step={0.05} />
+              </Field>
+              <Field label="Min debt yield">
+                <PctInput value={S.minDebtYield} onChange={(v) => setS({ minDebtYield: v })} step={0.25} />
+              </Field>
+              <Field label="Min DSCR">
+                <NumberInput value={S.minDscr} onChange={(v) => setS({ minDscr: v })} step={0.05} min={0} />
+              </Field>
+              <Field label="DSCR test rate" hint="Permanent-loan coupon">
+                <PctInput value={S.dscrRate} onChange={(v) => setS({ dscrRate: v })} step={0.05} />
+              </Field>
+              <Field label="DSCR amortization (months)">
+                <NumberInput value={S.dscrAmortMonths} onChange={(v) => setS({ dscrAmortMonths: Math.round(v) })} min={1} />
+              </Field>
+            </div>
+            <table className="mt-4 w-full">
+              <tbody>
+                {([
+                  ['Stabilized NOI (12 months after stabilization)', Z.stabilizedNoi],
+                  ['Value at completion', Z.valueAtCompletion],
+                  ['LTC basis (land + hard + soft)', Z.ltcBasis],
+                  ['Loan to Cost', Z.ltc],
+                  ['Loan to Value', Z.ltv],
+                  ['Debt Yield', Z.debtYield],
+                  ['DSCR', Z.dscr],
+                ] as const).map(([label, v]) => (
+                  <tr key={label} className={`border-t border-slate-100 ${label === Z.binding ? 'font-semibold text-slate-900' : ''}`}>
+                    <Td right={false} className="text-slate-700">{label}{label === Z.binding ? ' ◄ binds' : ''}</Td>
+                    <Td>{fmtMoney(v)}</Td>
+                  </tr>
+                ))}
+                <tr className="border-t border-slate-300 font-semibold">
+                  <Td right={false}>Construction loan commitment</Td>
+                  <Td>{fmtMoney(m.financing.loanAmount)}</Td>
+                </tr>
+              </tbody>
+            </table>
+          </Card>
+        )}
 
         <Card title="Loan Balance & Rate">
           <div className="h-64">

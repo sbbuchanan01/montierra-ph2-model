@@ -60,4 +60,22 @@ describe.each(cases)('template carry model — %s', (_name, a) => {
     }
     expect(amt(o, '700702')).toBeCloseTo(expected, 2);
   });
+
+  it('sizes the loan at the lesser of LTC, LTV, debt yield and DSCR (TEMPLATE v2 Inputs 8)', () => {
+    const z = o.financing.sizing!;
+    expect(z).toBeDefined();
+    expect(o.financing.loanAmount).toBeCloseTo(Math.min(z.ltc, z.ltv, z.debtYield, z.dscr), 2);
+    // LTC basis = land + hard + soft: total uses less financing costs and capitalized carry
+    const excluded = o.budget.rows
+      .filter((r) => r.code.startsWith('6006') || r.code === '700702' || r.code === '700703')
+      .reduce((s, r) => s + r.amount, 0);
+    expect(z.ltcBasis).toBeCloseTo(o.budget.totalGross - excluded, 2);
+    expect(z.ltc).toBeCloseTo(a.financing.construction.ltc * z.ltcBasis, 2);
+    const stab = o.leaseUpEndMonth;
+    const noi = o.monthly
+      .filter((r) => r.month > stab && r.month <= stab + 12)
+      .reduce((s, r) => s + r.totalIncome - r.totalExpenses + r.retailNoi, 0);
+    expect(z.stabilizedNoi).toBeCloseTo(noi, 2);
+    expect(o.financing.equityCommitment).toBeCloseTo(o.budget.totalGross - o.financing.loanAmount, 2);
+  });
 });

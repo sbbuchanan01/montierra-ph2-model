@@ -50,8 +50,8 @@ export default function TaxesPage() {
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Field
-                label="Carry architecture (interest, lease-up deficit, taxes)"
-                hint="Development template = interest paid current and capitalized through stabilization; taxes capitalized through the stabilization year and carried in NOI from first occupancy"
+                label="Model architecture (loan sizing, interest, lease-up deficit, taxes)"
+                hint="Development template = loan sized at the lesser of LTC / LTV / debt yield / DSCR; interest paid current and capitalized through stabilization; taxes capitalized through the stabilization year and carried in NOI from first occupancy"
               >
                 <Select
                   value={template ? CARRY[0] : CARRY[1]}

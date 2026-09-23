@@ -55,6 +55,25 @@ export interface RetailTenant {
   escalationPct: number;
 }
 
+export interface LoanSizingInputs {
+  maxLtv: number; // on value at completion
+  minDebtYield: number;
+  minDscr: number;
+  stabilizedCapRate: number; // value at completion = stabilized NOI / this
+  dscrRate: number; // permanent-loan rate the DSCR test is run on
+  dscrAmortMonths: number;
+}
+
+/** TEMPLATE v2 Inputs section 8 / section 9 defaults. */
+export const DEFAULT_LOAN_SIZING: LoanSizingInputs = {
+  maxLtv: 0.6,
+  minDebtYield: 0.085,
+  minDscr: 1.25,
+  stabilizedCapRate: 0.055,
+  dscrRate: 0.0575,
+  dscrAmortMonths: 360,
+};
+
 export interface Assumptions {
   /**
    * How construction interest, the lease-up deficit and property taxes are
@@ -63,7 +82,8 @@ export interface Assumptions {
    * current and capitalized through stabilization; lease-up deficit
    * capitalized through stabilization; taxes per its Taxes tab (construction
    * assessment vs. income approach, capitalized through the stabilization
-   * year, carried in NOI from first occupancy with a budget-funded add-back).
+   * year, carried in NOI from first occupancy with a budget-funded add-back);
+   * loan sized at the lesser of LTC (land + hard + soft), LTV, debt yield and DSCR.
    */
   carryModel?: 'workbook' | 'template';
   project: {
@@ -159,6 +179,12 @@ export interface Assumptions {
       ioMonths: number;
       amortYears: number;
       originationFeePct: number;
+      /**
+       * Template carry model only: the commitment is the lesser of LTC on land + hard + soft
+       * costs (financing costs and capitalized carry excluded), LTV on value at completion,
+       * debt yield and DSCR, all on stabilized NOI (the 12 months after stabilization).
+       */
+      sizing?: LoanSizingInputs;
       extension1Months: number;
       extension1FeePct: number;
       extension2Months: number;
@@ -448,6 +474,17 @@ export interface ModelOutput {
     payoffMonth: number;
     totalInterest: number;
     capitalizedInterest: number;
+    /** Template carry model only: the four sizing tests and which one binds. */
+    sizing?: {
+      stabilizedNoi: number;
+      valueAtCompletion: number;
+      ltcBasis: number;
+      ltc: number;
+      ltv: number;
+      debtYield: number;
+      dscr: number;
+      binding: 'Loan to Cost' | 'Loan to Value' | 'Debt Yield' | 'DSCR';
+    };
     refi: {
       enabled: boolean;
       proceeds: number;
