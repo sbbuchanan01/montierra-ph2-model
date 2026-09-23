@@ -1,7 +1,9 @@
 /**
- * Builds the two 2026.9.22 "MF Dev Model - 13 mo - v4" programs (16-unit MF and
- * 10-unit townhomes for rent) as scenario assumptions on top of the base case.
- * Source: G:\My Drive\Montierra Ph II\Analysis\2026.9.22 - ... v4 (16|10 units).xlsx
+ * Builds the two "MF Dev Model - 13 mo - v4" programs (16-unit MF and 10-unit townhomes for
+ * rent) as scenario assumptions on top of the base case.
+ * Sources (G:\My Drive\Montierra Ph II\Analysis):
+ *   16 units — 2026.9.22 ... v4 (16 units).xlsx (no longer in the folder; not revised on 9/23)
+ *   10 units — 2026.9.23 ... v4 (10 units).xlsx (9/23 budget revisions on Detailed Cost Input)
  */
 import { DEFAULT_ASSUMPTIONS } from '../src/lib/model/defaults';
 import type { Assumptions, CostLineItem } from '../src/lib/model/types';
@@ -44,7 +46,9 @@ export function v4Assumptions({ units }: Program): Assumptions {
     pctOfSpacesRented: 0.25,
     ratePerSpaceMonth: 0,
   };
-  a.opex = { ...a.opex, deductReservesFromCashFlow: true };
+  // The 9.22 workbooks net capital reserves out of operating cash flow; the 2026.9.23 10-unit
+  // workbook does not (Monthly PF row 186 = NOI only).
+  a.opex = { ...a.opex, deductReservesFromCashFlow: is16 };
 
   a.constructionCurve = {
     selected: 'Custom',
@@ -56,17 +60,35 @@ export function v4Assumptions({ units }: Program): Assumptions {
   const set: Record<string, Partial<CostLineItem>> = {
     'psa-attorney': { value: 20_000 },
     sitework: { value: 0 }, // v4 carries sitework inside the GC contract (200202)
-    'gc-contract': { value: is16 ? 132_500 : 175_000 },
+    'gc-contract': { value: is16 ? 132_500 : 200_000 },
     'monument-signage': { value: 15_000 },
-    'interior-signage': { value: 3_000 },
-    'leaseup-marketing': { value: 475 },
-    collateral: { value: 4_900 },
-    'other-municipal': { label: 'Allowance', value: is16 ? 0 : 100_000 },
+    'interior-signage': { value: is16 ? 3_000 : 5_000 },
+    'leaseup-marketing': { value: is16 ? 475 : 1_000 },
+    collateral: { value: is16 ? 4_900 : 7_500 },
+    'other-municipal': { label: 'Allowance', value: is16 ? 0 : 50_000 },
     appraisal: { value: is16 ? 5_000 : 2_500 },
     'lender-legal': { value: 10_000 },
     'loan-closing-costs': { value: 5_000 },
     'development-fee': { value: 150_000 },
     'legal-jv': { value: 25_000 },
+    // 10-unit budget revisions, 2026.9.23 workbook (Detailed Cost Input)
+    ...(is16
+      ? {}
+      : {
+          'low-voltage': { value: 10_000 }, // 200208
+          'security-access': { value: 1_000 }, // 200209 $/unit
+          'almc-telecomm': { value: 10_000 }, // 200215
+          'almc-startup': { value: 25_000 },
+          'almc-misc': { value: 15_000 },
+          'arch-design': { value: 50_000 }, // 300301
+          'structural-eng': { value: 25_000 },
+          'ae-misc': { value: 10_000 },
+          'civil-design': { value: 50_000 }, // 300304
+          'civil-misc': { value: 0 },
+          'materials-testing': { value: 15_000 }, // 300309
+          mep: { value: 0 }, // 300312
+          'landscape-arch': { value: 10_000 }, // 300313
+        }),
   };
   const items = a.costs.lineItems.map((i) => (set[i.id] ? { ...i, ...set[i.id] } : i));
   const gcIdx = items.findIndex((i) => i.id === 'gc-contract');
@@ -78,6 +100,18 @@ export function v4Assumptions({ units }: Program): Assumptions {
     amountType: 'fixed',
     value: 300_000,
   });
+  if (!is16) {
+    // 9.23 adds FHA / ADA / TAS under 300309 alongside the existing 300310 line (both $10,000).
+    const mtIdx = items.findIndex((i) => i.id === 'materials-testing');
+    items.splice(mtIdx + 1, 0, {
+      id: 'fha-ada-tas-309',
+      code: '300309',
+      group: 'Special Inspections & Testing',
+      label: 'FHA / ADA / TAS',
+      amountType: 'fixed',
+      value: 10_000,
+    });
+  }
   a.costs.lineItems = items;
   return a;
 }
