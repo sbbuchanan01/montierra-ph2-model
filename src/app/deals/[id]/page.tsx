@@ -92,6 +92,8 @@ export default function DealDashboardPage() {
   const [newName, setNewName] = useState('');
   const [newFrom, setNewFrom] = useState<string>('__base__');
   const [busy, setBusy] = useState(false);
+  // Case shown in the headline KPI row. undefined = follow the case open in the model.
+  const [pickedId, setPickedId] = useState<string | null | undefined>(undefined);
 
   const columns: Column[] = useMemo(
     () =>
@@ -117,6 +119,9 @@ export default function DealDashboardPage() {
 
   const isActiveDeal = project.id === activeProjectId;
   const base = columns[0].model;
+  const wantedId = pickedId !== undefined ? pickedId : isActiveDeal ? activeScenarioId : null;
+  const focused = columns.find((c) => c.id === wantedId) ?? columns[0];
+  const fm = focused.model;
   const location = [project.city, project.state].filter(Boolean).join(', ');
 
   const createScenario = async (thenOpen: boolean) => {
@@ -233,27 +238,54 @@ export default function DealDashboardPage() {
         </div>
       )}
 
-      {base && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          <StatCard label="Total Project Cost" value={fmtMoney(base.budget.totalGross)} sub={base.totalUnits > 0 ? `${fmtMoney(base.budget.totalGross / base.totalUnits)} / unit` : undefined} />
-          <StatCard label="Units / NRSF" value={fmtNum(base.totalUnits)} sub={`${fmtNum(base.totalNrsf)} SF · ${fmtMoney(base.avgRent)}/mo avg`} />
-          <StatCard label="Total Equity" value={fmtMoney(base.financing.equityCommitment)} sub={`Loan ${fmtMoney(base.financing.loanAmount)}`} />
-          <StatCard label="Net Sale Proceeds" value={fmtMoney(base.sale.netSaleProceeds)} sub={base.sale.date ? `Sale ${fmtDate(base.sale.date)}` : undefined} />
-          <StatCard label="Project XIRR" value={fmtPct(base.returns.projectXirr)} sub={`MOIC ${fmtX(base.returns.projectMoic)}`} accent />
-          <StatCard label="LP / GP IRR" value={fmtPct(base.waterfall.lpIrr)} sub={`GP ${fmtPct(base.waterfall.gpIrr)}`} />
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Showing</span>
+          <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            {columns.map((c) => {
+              const on = c.id === focused.id;
+              return (
+                <button
+                  key={c.id ?? '__base__'}
+                  onClick={() => setPickedId(c.id)}
+                  className={`rounded-md px-3 py-1 text-sm font-medium ${on ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                >
+                  {c.name}
+                  {isActiveDeal && c.id === activeScenarioId && <span className={`ml-1.5 ${on ? 'text-emerald-300' : 'text-emerald-600'}`}>●</span>}
+                </button>
+              );
+            })}
+          </div>
+          {isActiveDeal && focused.id === activeScenarioId && dirty && (
+            <span className="text-xs text-amber-700">Saved figures — your unsaved edits are not reflected</span>
+          )}
         </div>
-      )}
+        {fm ? (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+            <StatCard label="Total Project Cost" value={fmtMoney(fm.budget.totalGross)} sub={fm.totalUnits > 0 ? `${fmtMoney(fm.budget.totalGross / fm.totalUnits)} / unit` : undefined} />
+            <StatCard label="Units / NRSF" value={fmtNum(fm.totalUnits)} sub={`${fmtNum(fm.totalNrsf)} SF · ${fmtMoney(fm.avgRent)}/mo avg`} />
+            <StatCard label="Total Equity" value={fmtMoney(fm.financing.equityCommitment)} sub={`Loan ${fmtMoney(fm.financing.loanAmount)}`} />
+            <StatCard label="Net Sale Proceeds" value={fmtMoney(fm.sale.netSaleProceeds)} sub={fm.sale.date ? `Sale ${fmtDate(fm.sale.date)}` : undefined} />
+            <StatCard label="Project XIRR" value={fmtPct(fm.returns.projectXirr)} sub={`MOIC ${fmtX(fm.returns.projectMoic)}`} accent />
+            <StatCard label="LP / GP IRR" value={fmtPct(fm.waterfall.lpIrr)} sub={`GP ${fmtPct(fm.waterfall.gpIrr)}`} />
+          </div>
+        ) : (
+          <p className="text-sm text-red-600">Model error in {focused.name} — open it to fix inputs.</p>
+        )}
+      </section>
 
       <section>
         <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Scenarios</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {columns.map((c) => {
             const isOpen = isActiveDeal && c.id === activeScenarioId;
+            const isShown = c.id === focused.id;
             const m = c.model;
             return (
               <div
                 key={c.id ?? '__base__'}
-                className={`flex flex-col rounded-xl border bg-white p-5 shadow-sm ${isOpen ? 'border-slate-400 ring-1 ring-slate-300' : 'border-slate-200'}`}
+                onClick={() => setPickedId(c.id)}
+                className={`flex cursor-pointer flex-col rounded-xl border bg-white p-5 shadow-sm ${isShown ? 'border-slate-900 ring-1 ring-slate-900' : isOpen ? 'border-slate-400 ring-1 ring-slate-300' : 'border-slate-200 hover:border-slate-300'}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
