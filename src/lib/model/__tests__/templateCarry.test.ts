@@ -33,6 +33,11 @@ describe.each(cases)('template carry model — %s', (_name, a) => {
     expect(amt(o, '600614')).toBeCloseTo(expected, 2);
   });
 
+  it('untrended return on cost carries the peak construction-basis tax (TEMPLATE v2 Return on Cost D16)', () => {
+    const peak = Math.max(...o.taxes.map((t) => t.taxableValueConstruction * o.effectiveTaxRate));
+    expect(o.operatingYield.untrended.propertyTaxes).toBeCloseTo(peak, 2);
+  });
+
   it('capitalizes construction-basis taxes for every year through the stabilization year', () => {
     const expected = o.taxes
       .filter((t) => t.analysisYear <= capYear)

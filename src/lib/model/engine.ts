@@ -472,7 +472,6 @@ export function runModel(a: Assumptions): ModelOutput {
   const template = a.carryModel === 'template';
   const capYear = Math.ceil(LUF / 12);
   const tplConstrTax = new Array<number>(NY + 1).fill(0);
-  const tplIncomeTax = new Array<number>(NY + 1).fill(0);
   const tplTaxDue = new Array<number>(NY + 1).fill(0);
   const taxAddback = new Array<number>(N).fill(0);
   if (template) {
@@ -492,7 +491,6 @@ export function runModel(a: Assumptions): ModelOutput {
       const constrTv = (landValue + accrued) * a.taxes.assessmentRatio;
       const incomeTv = noiPre[y] / (a.taxes.mfBaseCapRate + effTaxRate);
       tplConstrTax[y] = constrTv * effTaxRate;
-      tplIncomeTax[y] = incomeTv * effTaxRate;
       tplTaxDue[y] = Math.max(constrTv, incomeTv) * effTaxRate;
       interimByYear[y] = y <= capYear ? tplConstrTax[y] : 0;
       taxYears.push({
@@ -1002,7 +1000,8 @@ export function runModel(a: Assumptions): ModelOutput {
   const untrended = buildUntrendedYield(a, units, nrsf, totalCost, totalNet, loanAmount, {
     effTaxRate,
     taxableValueOpYear1: projectTvByYear[Math.min(luYearRounded + 1, NY)] ?? 0,
-    untrendedTaxes: template ? tplIncomeTax[Math.min(capYear, NY)] : undefined,
+    // TEMPLATE v2 Return on Cost D16 (2026-09-23): the peak construction-basis tax (Taxes row 22).
+    untrendedTaxes: template ? Math.max(0, ...tplConstrTax.slice(1)) : undefined,
     rentedSpaces,
     storageMonthly,
   });
@@ -1142,7 +1141,7 @@ function buildUntrendedYield(
   ctx: {
     effTaxRate: number;
     taxableValueOpYear1: number;
-    untrendedTaxes?: number; // template: income-method taxes in the stabilization year
+    untrendedTaxes?: number; // template: peak construction-basis taxes (TEMPLATE v2 Taxes row 22)
     rentedSpaces: number;
     storageMonthly: number;
   },
