@@ -4,6 +4,9 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+> **Moved (2026-09-24):** this app now lives in `C:/Users/sbbuc/cre-underwriting` under `/development`
+> (https://cre-underwriting.vercel.app/development). This site only redirects there; do not develop here.
+
 # Montierra Ph. II Development Model
 
 Web app version of the Montierra Phase II multifamily development model (built 2026-07-17

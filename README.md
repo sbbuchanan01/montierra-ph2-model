@@ -1,3 +1,6 @@
+> **Moved (2026-09-24):** this app now lives in `C:/Users/sbbuc/cre-underwriting` under `/development`
+> (https://cre-underwriting.vercel.app/development). This site only redirects there; do not develop here.
+
 # Montierra Ph. II — Development Model
 
 Interactive web version of the 19-tab Excel development pro forma for **Montierra Ph. II**
