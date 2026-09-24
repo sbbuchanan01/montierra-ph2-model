@@ -7,9 +7,9 @@ import { Card, Field, Note, StatCard, Th, Td } from '@/components/ui';
 import {
   Delta, Kpi, METRICS, Pill, btn, fmtShort, fmtUpdated, inputCls, metric, useGuardDirty, useOpenScenario,
 } from '@/components/deals';
-import { tryRunModel, useModelStore, type Project, type ProjectMeta } from '@/store/useModelStore';
+import { tryRunModel, useModelStore, type Project, type ProjectMeta, type ScenarioSource } from '@/store/useModelStore';
 import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
-import type { ModelOutput } from '@/lib/model/types';
+import { headline, isForSaleOutput, kindOf, type AnyOutput, type ModelKind } from '@/lib/any';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -18,24 +18,28 @@ interface Column {
   id: string | null;
   name: string;
   savedAt: string;
-  model: ModelOutput | null;
+  kind: ModelKind;
+  model: AnyOutput | null;
 }
 
 /** The six headline figures on every scenario card, each with its delta vs. the base case. */
-const CARD_KPIS: { label: string; short?: boolean; sub?: (m: ModelOutput) => string }[] = [
-  { label: 'Total Project Cost', short: true, sub: (m) => (m.totalUnits > 0 ? `${fmtShort(m.budget.totalGross / m.totalUnits)}/unit` : '') },
-  { label: 'Total Equity', short: true, sub: (m) => `Loan ${fmtShort(m.financing.loanAmount)}` },
-  { label: 'Total Profit', short: true, sub: (m) => `Sale ${fmtShort(m.sale.mfSalePrice)}` },
-  { label: 'Project XIRR', sub: (m) => `${fmtX(m.returns.projectMoic)} MOIC` },
-  { label: 'LP IRR', sub: (m) => `GP ${fmtPct(m.waterfall.gpIrr, 1)}` },
-  { label: 'Untrended ROC', sub: (m) => `DSCR ${fmtX(m.operatingYield.untrended.dscr)}` },
+const CARD_KPIS: { label: string | ((kind: ModelKind) => string); short?: boolean; sub?: (m: AnyOutput) => string }[] = [
+  { label: 'Total Project Cost', short: true, sub: (m) => { const h = headline(m); return h.units > 0 ? `${fmtShort(h.totalCost / h.units)}/unit` : ''; } },
+  { label: 'Total Equity', short: true, sub: (m) => `Loan ${fmtShort(headline(m).loan)}` },
+  { label: 'Total Profit', short: true, sub: (m) => { const h = headline(m); return `${h.exitLabel} ${fmtShort(h.grossExit)}`; } },
+  { label: 'Project XIRR', sub: (m) => `${fmtX(headline(m).projectMoic)} MOIC` },
+  { label: 'LP IRR', sub: (m) => `GP ${fmtPct(headline(m).gpIrr, 1)}` },
+  { label: (kind) => (kind === 'forSale' ? 'Margin on Gross Sales' : 'Untrended ROC'), sub: (m) => headline(m).yieldSub },
 ];
 
 const SHORT_LABEL: Record<string, string> = {
   'Total Project Cost': 'Total cost',
   'Total Equity': 'Equity',
   'Total Profit': 'Profit',
+  'Margin on Gross Sales': 'Margin',
 };
+
+const KIND_LABEL: Record<ModelKind, string> = { rental: 'For rent', forSale: 'For sale' };
 
 function DetailsEditor({ project, onDone }: { project: Project; onDone: () => void }) {
   const [meta, setMeta] = useState<ProjectMeta>({
@@ -91,6 +95,7 @@ export default function DealDashboardPage() {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFrom, setNewFrom] = useState<string>('__base__');
+  const newSource = (): ScenarioSource => (newFrom === '__base__' ? null : newFrom === '__forsale__' ? { template: 'forSale' } : newFrom);
   const [busy, setBusy] = useState(false);
   // Case shown in the headline KPI row. undefined = follow the case open in the model.
   const [pickedId, setPickedId] = useState<string | null | undefined>(undefined);
@@ -99,8 +104,8 @@ export default function DealDashboardPage() {
     () =>
       project
         ? [
-            { id: null, name: 'Base case', savedAt: project.updatedAt, model: tryRunModel(project.baseCase) },
-            ...project.scenarios.map((sc) => ({ id: sc.id, name: sc.name, savedAt: sc.savedAt, model: tryRunModel(sc.assumptions) })),
+            { id: null, name: 'Base case', savedAt: project.updatedAt, kind: kindOf(project.baseCase), model: tryRunModel(project.baseCase) },
+            ...project.scenarios.map((sc) => ({ id: sc.id, name: sc.name, savedAt: sc.savedAt, kind: kindOf(sc.assumptions), model: tryRunModel(sc.assumptions) })),
           ]
         : [],
     [project],
@@ -122,6 +127,7 @@ export default function DealDashboardPage() {
   const wantedId = pickedId !== undefined ? pickedId : isActiveDeal ? activeScenarioId : null;
   const focused = columns.find((c) => c.id === wantedId) ?? columns[0];
   const fm = focused.model;
+  const fh = fm ? headline(fm) : null;
   const location = [project.city, project.state].filter(Boolean).join(', ');
 
   const createScenario = async (thenOpen: boolean) => {
@@ -129,7 +135,7 @@ export default function DealDashboardPage() {
     if (!name) return;
     if (thenOpen && !guardDirty()) return;
     setBusy(true);
-    const scId = await useModelStore.getState().createScenario(project.id, name, newFrom === '__base__' ? null : newFrom);
+    const scId = await useModelStore.getState().createScenario(project.id, name, newSource());
     setBusy(false);
     if (!scId) return;
     setNewName('');
@@ -147,12 +153,15 @@ export default function DealDashboardPage() {
 
   const chartData = columns
     .filter((c) => c.model)
-    .map((c) => ({
-      name: c.name,
-      xirr: Math.round((c.model!.returns.projectXirr ?? 0) * 10000) / 100,
-      lpIrr: Math.round((c.model!.waterfall.lpIrr ?? 0) * 10000) / 100,
-      gpIrr: Math.round((c.model!.waterfall.gpIrr ?? 0) * 10000) / 100,
-    }));
+    .map((c) => {
+      const h = headline(c.model!);
+      return {
+        name: c.name,
+        xirr: Math.round((h.projectIrr ?? 0) * 10000) / 100,
+        lpIrr: Math.round((h.lpIrr ?? 0) * 10000) / 100,
+        gpIrr: Math.round((h.gpIrr ?? 0) * 10000) / 100,
+      };
+    });
 
   return (
     <div className="space-y-6">
@@ -220,6 +229,7 @@ export default function DealDashboardPage() {
                     {sc.name}
                   </option>
                 ))}
+                <option value="__forsale__">For-sale townhome template (10 homes)</option>
               </select>
             </Field>
             <div className="col-span-2 flex gap-1.5">
@@ -233,7 +243,8 @@ export default function DealDashboardPage() {
           </div>
           <p className="mt-2 text-xs text-slate-500">
             A scenario starts as an exact copy of the case you pick. Open it, change assumptions on any tab, then Save
-            scenario in the bar at the top.
+            scenario in the bar at the top. The for-sale template is the Townhome For-Sale Development Model
+            (homes sold at closing, carry on unsold inventory, loan swept from closings) rather than a rental case.
           </p>
         </div>
       )}
@@ -260,14 +271,14 @@ export default function DealDashboardPage() {
             <span className="text-xs text-amber-700">Saved figures — your unsaved edits are not reflected</span>
           )}
         </div>
-        {fm ? (
+        {fm && fh ? (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            <StatCard label="Total Project Cost" value={fmtMoney(fm.budget.totalGross)} sub={fm.totalUnits > 0 ? `${fmtMoney(fm.budget.totalGross / fm.totalUnits)} / unit` : undefined} />
-            <StatCard label="Units / NRSF" value={fmtNum(fm.totalUnits)} sub={`${fmtNum(fm.totalNrsf)} SF · ${fmtMoney(fm.avgRent)}/mo avg`} />
-            <StatCard label="Total Equity" value={fmtMoney(fm.financing.equityCommitment)} sub={`Loan ${fmtMoney(fm.financing.loanAmount)}`} />
-            <StatCard label="Net Sale Proceeds" value={fmtMoney(fm.sale.netSaleProceeds)} sub={fm.sale.date ? `Sale ${fmtDate(fm.sale.date)}` : undefined} />
-            <StatCard label="Project XIRR" value={fmtPct(fm.returns.projectXirr)} sub={`MOIC ${fmtX(fm.returns.projectMoic)}`} accent />
-            <StatCard label="LP / GP IRR" value={fmtPct(fm.waterfall.lpIrr)} sub={`GP ${fmtPct(fm.waterfall.gpIrr)}`} />
+            <StatCard label="Total Project Cost" value={fmtMoney(fh.totalCost)} sub={fh.units > 0 ? `${fmtMoney(fh.totalCost / fh.units)} / unit` : undefined} />
+            <StatCard label={fh.kind === 'forSale' ? 'Homes / Saleable SF' : 'Units / NRSF'} value={fmtNum(fh.units)} sub={fh.kind === 'forSale' ? `${fmtNum(fh.nsf)} SF · for sale` : `${fmtNum(fh.nsf)} SF · ${fmtMoney(isForSaleOutput(fm) ? 0 : fm.avgRent)}/mo avg`} />
+            <StatCard label="Total Equity" value={fmtMoney(fh.equity)} sub={`Loan ${fmtMoney(fh.loan)}`} />
+            <StatCard label={fh.kind === 'forSale' ? 'Net Sales Proceeds' : 'Net Sale Proceeds'} value={fmtMoney(fh.netExit)} sub={fh.exitDate ? `${fh.exitLabel} ${fmtDate(fh.exitDate)}` : undefined} />
+            <StatCard label={fh.kind === 'forSale' ? 'Levered IRR' : 'Project XIRR'} value={fmtPct(fh.projectIrr)} sub={`MOIC ${fmtX(fh.projectMoic)}`} accent />
+            <StatCard label="LP / GP IRR" value={fmtPct(fh.lpIrr)} sub={`GP ${fmtPct(fh.gpIrr)}`} />
           </div>
         ) : (
           <p className="text-sm text-red-600">Model error in {focused.name} — open it to fix inputs.</p>
@@ -298,18 +309,20 @@ export default function DealDashboardPage() {
                     {isOpen && dirty && <Pill tone="amber">Unsaved</Pill>}
                     {isOpen && <Pill tone="green">Open</Pill>}
                     {c.id === null && <Pill tone="navy">Base case</Pill>}
+                    {c.kind === 'forSale' && <Pill tone="sky">{KIND_LABEL.forSale}</Pill>}
                   </div>
                 </div>
                 {m ? (
                   <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-3 text-sm">
                     {CARD_KPIS.map((k) => {
-                      const mt = metric(k.label);
+                      const label = typeof k.label === 'function' ? k.label(c.kind) : k.label;
+                      const mt = metric(label);
                       const v = mt.value(m);
                       return (
                         <Kpi
-                          key={k.label}
-                          label={SHORT_LABEL[k.label] ?? k.label}
-                          value={k.short ? fmtShort(v) : mt.fmt(v)}
+                          key={label}
+                          label={SHORT_LABEL[label] ?? label}
+                          value={v == null ? '—' : k.short ? fmtShort(v) : mt.fmt(v)}
                           sub={k.sub?.(m)}
                           delta={c.id !== null && base ? <Delta m={mt} v={v} base={mt.value(base)} /> : undefined}
                         />
@@ -394,7 +407,7 @@ export default function DealDashboardPage() {
                         const v = mt.value(c.model);
                         return (
                           <Td key={c.id ?? '__base__'}>
-                            {mt.fmt(v)}
+                            {v == null ? <span className="text-slate-300">—</span> : mt.fmt(v)}
                             {ci > 0 && base && <Delta m={mt} v={v} base={mt.value(base)} />}
                           </Td>
                         );
@@ -415,7 +428,7 @@ export default function DealDashboardPage() {
                   <YAxis tick={{ fontSize: 11 }} unit="%" width={44} />
                   <Tooltip formatter={(v) => `${v}%`} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="xirr" fill="#0f2a43" name="Project XIRR" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="xirr" fill="#0f2a43" name="Project / Levered XIRR" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="lpIrr" fill="#3f6b94" name="LP IRR" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="gpIrr" fill="#9dbcd6" name="GP IRR" radius={[3, 3, 0, 0]} />
                 </BarChart>

@@ -1,11 +1,13 @@
 'use client';
 
+import { ForSaleProgram } from '@/components/forsale/Program';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Field, NumberInput, PctInput, Th, Td, Note } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtMoney, fmtNum } from '@/lib/format';
 
-export default function UnitMixPage() {
-  const a = useModelStore((s) => s.assumptions);
+function UnitMixPage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
 
@@ -123,4 +125,9 @@ export default function UnitMixPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleProgram /> : <UnitMixPage />;
 }

@@ -1,7 +1,9 @@
 'use client';
 
+import { ForSaleFinancing } from '@/components/forsale/Financing';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Field, NumberInput, PctInput, Select, Toggle, Th, Td, Money, Note } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtMoney, fmtPct } from '@/lib/format';
 import { SOFR_FORWARD_CURVE } from '@/lib/model/curves';
 import { DEFAULT_LOAN_SIZING, type LoanSizingInputs } from '@/lib/model/types';
@@ -9,8 +11,8 @@ import {
   ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 
-export default function FinancingPage() {
-  const a = useModelStore((s) => s.assumptions);
+function FinancingPage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
 
@@ -263,4 +265,9 @@ export default function FinancingPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleFinancing /> : <FinancingPage />;
 }

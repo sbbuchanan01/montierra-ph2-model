@@ -1,7 +1,9 @@
 'use client';
 
+import { ForSaleReturns } from '@/components/forsale/Returns';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, StatCard, Th, Td, Money, Field, PctInput, NumberInput } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtMoney, fmtPct, fmtX } from '@/lib/format';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -50,9 +52,9 @@ function YieldColumn({ col }: { col: OperatingYieldCol }) {
   );
 }
 
-export default function ReturnsPage() {
+function ReturnsPage() {
   const m = useModel();
-  const a = useModelStore((s) => s.assumptions);
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const wf = m.waterfall;
 
@@ -123,4 +125,9 @@ export default function ReturnsPage() {
       </div>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleReturns /> : <ReturnsPage />;
 }

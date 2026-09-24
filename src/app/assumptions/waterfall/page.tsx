@@ -1,11 +1,13 @@
 'use client';
 
+import { ForSaleWaterfall } from '@/components/forsale/Waterfall';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Field, PctInput, Th, Td, Money, Note } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtMoney, fmtPct, fmtX } from '@/lib/format';
 
-export default function WaterfallAssumptionsPage() {
-  const a = useModelStore((s) => s.assumptions);
+function WaterfallAssumptionsPage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
 
@@ -148,4 +150,9 @@ export default function WaterfallAssumptionsPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleWaterfall /> : <WaterfallAssumptionsPage />;
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { ForSaleCashFlow } from '@/components/forsale/CashFlow';
+import { useModelKind } from '@/store/useModelStore';
 import { useState } from 'react';
 import { Card, Th, Td, Money } from '@/components/ui';
 import { useModel } from '@/store/useModelStore';
@@ -31,7 +33,7 @@ const ROWS: { label: string; get: (r: MonthlyRow) => number; bold?: boolean; sec
   { label: 'PROJECT CASH FLOW', get: (r) => r.projectCashFlow, bold: true },
 ];
 
-export default function CashFlowPage() {
+function CashFlowPage() {
   const m = useModel();
   const [gran, setGran] = useState<Granularity>('annual');
   const [showOps, setShowOps] = useState(false);
@@ -173,4 +175,9 @@ export default function CashFlowPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleCashFlow /> : <CashFlowPage />;
 }

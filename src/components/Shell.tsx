@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { useActiveProject, useModel, useModelStore } from '@/store/useModelStore';
+import { useActiveProject, useAnyModel, useModelKind, useModelStore } from '@/store/useModelStore';
 import { fmtMoney, fmtPct, fmtX } from '@/lib/format';
+import { headline, isForSaleOutput } from '@/lib/any';
 
-const NAV: { href: string; label: string }[] = [
+/** Tabs for the multifamily rental model. */
+const NAV_RENTAL: { href: string; label: string }[] = [
   { href: '/summary', label: 'Summary' },
   { href: '/assumptions/unit-mix', label: 'Unit Mix' },
   { href: '/assumptions/leasing', label: 'Leasing' },
@@ -18,6 +20,21 @@ const NAV: { href: string; label: string }[] = [
   { href: '/returns', label: 'Returns' },
   { href: '/taxes', label: 'Taxes' },
   { href: '/comps', label: 'Comps' },
+  { href: '/export', label: 'Export' },
+];
+
+/** Tabs for the for-sale townhome model — same routes, each page renders the for-sale version. */
+const NAV_FOR_SALE: { href: string; label: string }[] = [
+  { href: '/summary', label: 'Summary' },
+  { href: '/assumptions/unit-mix', label: 'Program & Pricing' },
+  { href: '/assumptions/leasing', label: 'Sales & Delivery' },
+  { href: '/assumptions/costs', label: 'Budget' },
+  { href: '/assumptions/financing', label: 'Financing' },
+  { href: '/assumptions/construction-curve', label: 'Schedule & Curve' },
+  { href: '/assumptions/waterfall', label: 'Waterfall' },
+  { href: '/cash-flow', label: 'Sales CF' },
+  { href: '/returns', label: 'Returns' },
+  { href: '/taxes', label: 'Carry & Taxes' },
   { href: '/export', label: 'Export' },
 ];
 
@@ -39,17 +56,29 @@ function Ready({ children }: { children: ReactNode }) {
 }
 
 function KpiStrip() {
-  const model = useModel();
-  const kpis: [string, string][] = [
-    ['Total Cost', fmtMoney(model.budget.totalGross)],
-    ['XIRR', fmtPct(model.returns.projectXirr)],
-    ['MOIC', fmtX(model.returns.projectMoic)],
-    ['ROC', fmtPct(model.operatingYield.untrended.returnOnCostGross)],
-    ['Debt Yield', fmtPct(model.operatingYield.untrended.debtYield)],
-    ['DSCR', fmtX(model.operatingYield.untrended.dscr)],
-    ['LP IRR', fmtPct(model.waterfall.lpIrr)],
-    ['GP IRR', fmtPct(model.waterfall.gpIrr)],
-  ];
+  const model = useAnyModel();
+  const h = headline(model);
+  const kpis: [string, string][] = isForSaleOutput(model)
+    ? [
+        ['Total Cost', fmtMoney(h.totalCost)],
+        ['Levered IRR', fmtPct(h.projectIrr)],
+        ['MOIC', fmtX(h.projectMoic)],
+        ['Profit', fmtMoney(h.profit)],
+        ['Margin', fmtPct(model.margin.trended.marginOnGross, 1)],
+        ['ROC', fmtPct(model.margin.trended.returnOnCost, 1)],
+        ['LP IRR', fmtPct(h.lpIrr)],
+        ['GP IRR', fmtPct(h.gpIrr)],
+      ]
+    : [
+        ['Total Cost', fmtMoney(model.budget.totalGross)],
+        ['XIRR', fmtPct(model.returns.projectXirr)],
+        ['MOIC', fmtX(model.returns.projectMoic)],
+        ['ROC', fmtPct(model.operatingYield.untrended.returnOnCostGross)],
+        ['Debt Yield', fmtPct(model.operatingYield.untrended.debtYield)],
+        ['DSCR', fmtX(model.operatingYield.untrended.dscr)],
+        ['LP IRR', fmtPct(model.waterfall.lpIrr)],
+        ['GP IRR', fmtPct(model.waterfall.gpIrr)],
+      ];
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1">
       {kpis.map(([label, value]) => (
@@ -250,23 +279,8 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           </Ready>
           <nav className="mt-1.5 flex gap-0.5 overflow-x-auto">
-            {NAV.map((item) => {
-              const active = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-                    active
-                      ? 'border-slate-900 text-slate-900'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
             <Ready>
+              <NavLinks pathname={pathname} />
               <ScenariosNavLink />
             </Ready>
           </nav>
@@ -276,6 +290,30 @@ export function Shell({ children }: { children: ReactNode }) {
         <Ready>{children}</Ready>
       </main>
     </div>
+  );
+}
+
+/** The model tabs for the kind of case that is open. */
+function NavLinks({ pathname }: { pathname: string }) {
+  const kind = useModelKind();
+  const nav = kind === 'forSale' ? NAV_FOR_SALE : NAV_RENTAL;
+  return (
+    <>
+      {nav.map((item) => {
+        const active = pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              active ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </>
   );
 }
 
@@ -309,6 +347,16 @@ function ProjectTitle() {
         'Development Model'
       )}
       <span className="ml-2 text-xs font-normal text-slate-400">{sub || 'Development model'}</span>
+      <KindBadge />
     </>
+  );
+}
+
+function KindBadge() {
+  const kind = useModelKind();
+  return (
+    <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${kind === 'forSale' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-600'}`}>
+      {kind === 'forSale' ? 'For sale' : 'For rent'}
+    </span>
   );
 }

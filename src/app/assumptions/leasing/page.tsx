@@ -1,14 +1,16 @@
 'use client';
 
+import { ForSaleSales } from '@/components/forsale/Sales';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Field, NumberInput, PctInput } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtDate } from '@/lib/format';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 
-export default function LeasingPage() {
-  const a = useModelStore((s) => s.assumptions);
+function LeasingPage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
 
@@ -172,4 +174,9 @@ export default function LeasingPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleSales /> : <LeasingPage />;
 }

@@ -62,3 +62,29 @@ Dev preview from a portal session: launch config `montierra-dev` (port 3421) in
 
 ## Related projects
 See `~/.claude/CLAUDE.md` for the index of Stephen's other apps that share this Supabase project.
+
+## For-sale townhome model (added 2026-09-24)
+A second engine, `src/lib/forsale`, ports `G:\My Drive\Montierra Ph II\Analysis\Townhome For-Sale
+Development Model - TEMPLATE v2.xlsx` (Stephen's copy as saved 2026-09-23 18:18). Homes deliver at a pace
+from the first CO and close at a pace from the first closing (never before delivery), each at its base
+price grown to the model year it closes in; carry runs on delivered homes still unsold; taxes: model year 1
+capitalized, months after year 1 before the first closing not charged, then pro rata on unsold homes; the
+construction loan funds behind equity (or pari passu), interest is paid current (a circular budget line
+before the first closing, then paid from sales cash) and the lender sweeps the release % of net sellout cash.
+- **Data:** a case is `Assumptions` (rental, no `kind`) or `ForSaleAssumptions` (`kind: 'forSale'`) in the
+  same jsonb columns. `src/lib/any.ts` is the only place that tells them apart (`isForSale`, `runAny`,
+  `headline()` for the cross-kind dashboard figures). The store draft is `AnyAssumptions`; rental pages use
+  `useModel()` / `useRentalAssumptions()` / `update()`, for-sale pages use `useForSale()` (returns
+  `{ a, m, update }`). Every model page's default export branches on `useModelKind()`; the for-sale
+  versions live in `src/components/forsale/*` and reuse the same routes (nav labels change in `Shell.tsx`).
+- **Tests:** `src/lib/forsale/__tests__/th-template.test.ts` ties every Draw / Debt / Sales CF / Waterfall
+  month, the Annual Summary, Returns, Margin on Cost, Taxes and both sensitivity grids to the workbook's
+  cached values (dollars to the cent, IRRs to 1e-7) via `src/lib/forsale/fixtures/th-template.json`.
+  Re-extract after the workbook changes: copy it to `th.xlsx` next to `scripts/extract_th_fixture.py`
+  and run that script with the full Python path, then update `TH_TEMPLATE_ASSUMPTIONS` in
+  `src/lib/forsale/defaults.ts` to match the Inputs / Unit Mix / Development Budget tabs.
+- **Scenario:** "10-Unit TH (For Sale)" (montierra_scenarios `c841a5cd-…`) on the Montierra Ph. II deal
+  holds the template verbatim (`npx tsx scripts/th-forsale-scenario.ts` prints the JSON). New scenarios can
+  also start from the template ("For-sale townhome template" in Start from), and a new deal can be
+  "Blank — townhomes for sale".
+- `npx tsx scripts/render-forsale.tsx` server-renders all 11 for-sale pages as a smoke test (no login needed).

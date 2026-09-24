@@ -7,6 +7,7 @@ import { Field, Note, StatCard } from '@/components/ui';
 import { Kpi, Pill, btn, fmtShort, fmtUpdated, inputCls, useGuardDirty } from '@/components/deals';
 import { tryRunModel, useModelStore, type ProjectMeta } from '@/store/useModelStore';
 import { fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
+import { headline, kindOf } from '@/lib/any';
 
 const emptyMeta: ProjectMeta = { name: '', city: '', state: '', constructionType: '' };
 
@@ -25,19 +26,19 @@ export default function DealsPage() {
   const rows = useMemo(
     () =>
       projects
-        .map((p) => ({ project: p, m: tryRunModel(p.baseCase) }))
+        .map((p) => { const m = tryRunModel(p.baseCase); return { project: p, m, h: m ? headline(m) : null }; })
         .sort((a, b) => (b.project.updatedAt || '').localeCompare(a.project.updatedAt || '')),
     [projects],
   );
 
   const totals = rows.reduce(
-    (t, { m }) =>
-      m
+    (t, { h }) =>
+      h
         ? {
-            units: t.units + m.totalUnits,
-            cost: t.cost + m.budget.totalGross,
-            equity: t.equity + m.financing.equityCommitment,
-            profit: t.profit + (m.returns.totalDistributions - m.returns.totalEquityInvested),
+            units: t.units + h.units,
+            cost: t.cost + h.totalCost,
+            equity: t.equity + h.equity,
+            profit: t.profit + h.profit,
           }
         : t,
     { units: 0, cost: 0, equity: 0, profit: 0 },
@@ -49,7 +50,7 @@ export default function DealsPage() {
     setBusy(true);
     const id = await useModelStore
       .getState()
-      .createProject({ ...meta, name: meta.name.trim() }, template === 'blank' ? 'blank' : { copyFrom: template });
+      .createProject({ ...meta, name: meta.name.trim() }, template === 'blank' ? 'blank' : template === 'blank-forsale' ? 'blankForSale' : { copyFrom: template });
     setBusy(false);
     if (!id) return;
     setMeta(emptyMeta);
@@ -62,7 +63,7 @@ export default function DealsPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Deals</h1>
-          <p className="text-sm text-slate-500">Multifamily development models — each deal holds a base case and any number of scenarios</p>
+          <p className="text-sm text-slate-500">Development models, for rent and for sale — each deal holds a base case and any number of scenarios</p>
         </div>
         <button className={btn.primary} onClick={() => setShowCreate((v) => !v)}>
           {showCreate ? 'Cancel' : '＋ New deal'}
@@ -101,10 +102,11 @@ export default function DealsPage() {
             </Field>
             <Field label="Start from">
               <select className={inputCls} value={template} onChange={(e) => setTemplate(e.target.value)}>
-                <option value="blank">Blank assumptions</option>
+                <option value="blank">Blank — multifamily for rent</option>
+                <option value="blank-forsale">Blank — townhomes for sale</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    Copy of {p.name} (base case)
+                    Copy of {p.name} (base case, {kindOf(p.baseCase) === 'forSale' ? 'for sale' : 'for rent'})
                   </option>
                 ))}
               </select>
@@ -131,7 +133,7 @@ export default function DealsPage() {
       <section>
         <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Pipeline</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {rows.map(({ project: p, m }) => {
+          {rows.map(({ project: p, m, h }) => {
             const location = [p.city, p.state].filter(Boolean).join(', ');
             const isActive = p.id === activeProjectId;
             return (
@@ -155,15 +157,15 @@ export default function DealsPage() {
                     </Pill>
                   </div>
                 </div>
-                {m ? (
-                  m.totalUnits > 0 ? (
+                {m && h ? (
+                  h.units > 0 ? (
                     <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-3 text-sm">
-                      <Kpi label="Total cost" value={fmtShort(m.budget.totalGross)} sub={`${fmtShort(m.budget.totalGross / m.totalUnits)}/unit`} />
-                      <Kpi label="Units" value={fmtNum(m.totalUnits)} sub={`${fmtNum(m.totalNrsf)} NRSF`} />
-                      <Kpi label="Project XIRR" value={fmtPct(m.returns.projectXirr, 1)} sub={`${fmtX(m.returns.projectMoic)} MOIC`} />
-                      <Kpi label="Equity" value={fmtShort(m.financing.equityCommitment)} sub={`Loan ${fmtShort(m.financing.loanAmount)}`} />
-                      <Kpi label="Untrended ROC" value={fmtPct(m.operatingYield.untrended.returnOnCostGross)} sub={`DY ${fmtPct(m.operatingYield.untrended.debtYield, 1)}`} />
-                      <Kpi label="LP IRR" value={fmtPct(m.waterfall.lpIrr, 1)} sub={`Profit ${fmtShort(m.returns.totalDistributions - m.returns.totalEquityInvested)}`} />
+                      <Kpi label="Total cost" value={fmtShort(h.totalCost)} sub={`${fmtShort(h.totalCost / h.units)}/unit`} />
+                      <Kpi label={h.kind === 'forSale' ? 'Homes' : 'Units'} value={fmtNum(h.units)} sub={`${fmtNum(h.nsf)} SF · ${h.kind === 'forSale' ? 'for sale' : 'for rent'}`} />
+                      <Kpi label={h.kind === 'forSale' ? 'Levered IRR' : 'Project XIRR'} value={fmtPct(h.projectIrr, 1)} sub={`${fmtX(h.projectMoic)} MOIC`} />
+                      <Kpi label="Equity" value={fmtShort(h.equity)} sub={`Loan ${fmtShort(h.loan)}`} />
+                      <Kpi label={h.yieldLabel} value={fmtPct(h.yieldValue)} sub={h.yieldSub} />
+                      <Kpi label="LP IRR" value={fmtPct(h.lpIrr, 1)} sub={`Profit ${fmtShort(h.profit)}`} />
                     </div>
                   ) : (
                     <p className="mt-4 text-sm text-slate-500">No units yet — open the deal and fill in the unit mix and budget.</p>
@@ -173,7 +175,7 @@ export default function DealsPage() {
                 )}
                 <div className="mt-4 flex items-center justify-between text-[11px] text-slate-400">
                   <span>Base case · updated {fmtUpdated(p.updatedAt)}</span>
-                  {m && m.totalUnits > 0 && <span>Cost {fmtMoney(m.budget.totalGross)}</span>}
+                  {h && h.units > 0 && <span>Cost {fmtMoney(h.totalCost)}</span>}
                 </div>
               </Link>
             );

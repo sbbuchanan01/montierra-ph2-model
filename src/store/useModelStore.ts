@@ -6,13 +6,17 @@ import { useMemo } from 'react';
 import type { Assumptions } from '@/lib/model/types';
 import { DEFAULT_ASSUMPTIONS, makeBlankAssumptions } from '@/lib/model/defaults';
 import { runModel } from '@/lib/model/engine';
+import type { ForSaleAssumptions } from '@/lib/forsale/types';
+import { TH_TEMPLATE_ASSUMPTIONS, makeBlankForSale } from '@/lib/forsale/defaults';
+import { runForSaleModel } from '@/lib/forsale/engine';
+import { isForSale, kindOf, runAny, tryRunAny, type AnyAssumptions, type ModelKind } from '@/lib/any';
 import { createClient } from '@/lib/supabase/client';
 
 export interface Scenario {
   id: string;
   name: string;
   savedAt: string;
-  assumptions: Assumptions;
+  assumptions: AnyAssumptions;
 }
 
 export interface ProjectMeta {
@@ -26,14 +30,21 @@ export interface Project extends ProjectMeta {
   id: string;
   createdAt: string;
   updatedAt: string;
-  baseCase: Assumptions;
+  baseCase: AnyAssumptions;
   scenarios: Scenario[];
 }
 
-/** 'blank' = zeroed assumptions; otherwise copy an existing deal's base case. */
-export type ProjectTemplate = 'blank' | { copyFrom: string };
+/** 'blank' = zeroed rental assumptions, 'blankForSale' = zeroed for-sale assumptions; otherwise copy an existing deal's base case. */
+export type ProjectTemplate = 'blank' | 'blankForSale' | { copyFrom: string };
+
+/** A scenario starts from the base case (null), another scenario (its id) or the for-sale townhome template. */
+export type ScenarioSource = string | null | { template: 'forSale' };
 
 const clone = <T,>(v: T): T => structuredClone(v);
+
+/** A deep copy of a case under a new deal name, whichever kind it is. */
+const renamed = (a: AnyAssumptions, name: string): AnyAssumptions =>
+  isForSale(a) ? { ...clone(a), project: { ...a.project, name } } : { ...clone(a), project: { ...a.project, name } };
 
 /**
  * Projects captured from the pre-Supabase localStorage schema (v2) during
@@ -52,13 +63,16 @@ interface ModelStore {
   activeProjectId: string | null;
   /** null = the project's base case */
   activeScenarioId: string | null;
-  /** Working draft — what every input page edits and every output reflects. */
-  assumptions: Assumptions;
+  /** Working draft — what every input page edits and every output reflects (rental or for-sale). */
+  assumptions: AnyAssumptions;
   dirty: boolean;
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** Edit a rental draft. A no-op while a for-sale case is open (the pages branch on kind, so this never fires then). */
   update: (fn: (draft: Assumptions) => Assumptions) => void;
+  /** Edit a for-sale draft. A no-op while a rental case is open. */
+  updateForSale: (fn: (draft: ForSaleAssumptions) => ForSaleAssumptions) => void;
   save: () => Promise<void>;
   saveAsScenario: (name: string) => Promise<void>;
   setAsBaseCase: () => Promise<void>;
@@ -70,7 +84,7 @@ interface ModelStore {
   /** Returns the new project's id, or null if the insert failed. */
   createProject: (meta: ProjectMeta, template: ProjectTemplate) => Promise<string | null>;
   /** Adds a scenario to any deal, copied from its base case (null) or another scenario. Does not touch the draft. */
-  createScenario: (projectId: string, name: string, fromScenarioId: string | null) => Promise<string | null>;
+  createScenario: (projectId: string, name: string, from: ScenarioSource) => Promise<string | null>;
   updateProjectMeta: (projectId: string, patch: Partial<ProjectMeta>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   renameScenario: (scenarioId: string, name: string) => Promise<void>;
@@ -81,7 +95,7 @@ interface ModelStore {
 const activeProjectOf = (s: Pick<ModelStore, 'projects' | 'activeProjectId'>): Project | undefined =>
   s.projects.find((p) => p.id === s.activeProjectId) ?? s.projects[0];
 
-const savedSnapshot = (project: Project | undefined, scenarioId: string | null): Assumptions => {
+const savedSnapshot = (project: Project | undefined, scenarioId: string | null): AnyAssumptions => {
   if (!project) return DEFAULT_ASSUMPTIONS;
   if (scenarioId === null) return project.baseCase;
   return project.scenarios.find((sc) => sc.id === scenarioId)?.assumptions ?? project.baseCase;
@@ -106,14 +120,14 @@ async function fetchProjects(): Promise<Project[]> {
     constructionType: (p.construction_type as string) ?? '',
     createdAt: p.created_at as string,
     updatedAt: (p.updated_at as string) ?? (p.created_at as string),
-    baseCase: p.base_case as Assumptions,
+    baseCase: p.base_case as AnyAssumptions,
     scenarios: (scenariosRes.data ?? [])
       .filter((sc) => sc.project_id === p.id)
       .map((sc) => ({
         id: sc.id as string,
         name: sc.name as string,
         savedAt: sc.saved_at as string,
-        assumptions: sc.assumptions as Assumptions,
+        assumptions: sc.assumptions as AnyAssumptions,
       })),
   }));
 }
@@ -229,7 +243,11 @@ export const useModelStore = create<ModelStore>()(
           await sync(async () => reconcile(await fetchProjects()));
         },
 
-        update: (fn) => set((s) => ({ assumptions: fn(clone(s.assumptions)), dirty: true })),
+        update: (fn) =>
+          set((s) => (isForSale(s.assumptions) ? s : { assumptions: fn(clone(s.assumptions)), dirty: true })),
+
+        updateForSale: (fn) =>
+          set((s) => (isForSale(s.assumptions) ? { assumptions: fn(clone(s.assumptions)), dirty: true } : s)),
 
         save: async () => {
           const s = get();
@@ -354,10 +372,13 @@ export const useModelStore = create<ModelStore>()(
           }),
 
         createProject: async (meta, template) => {
-          const source = template === 'blank' ? undefined : get().projects.find((p) => p.id === template.copyFrom);
-          const baseCase = source
-            ? { ...clone(source.baseCase), project: { ...clone(source.baseCase.project), name: meta.name } }
-            : makeBlankAssumptions(meta.name);
+          const source =
+            typeof template === 'string' ? undefined : get().projects.find((p) => p.id === template.copyFrom);
+          const baseCase: AnyAssumptions = source
+            ? renamed(source.baseCase, meta.name)
+            : template === 'blankForSale'
+              ? makeBlankForSale(meta.name)
+              : makeBlankAssumptions(meta.name);
           baseCase.project.location = [meta.city, meta.state].filter(Boolean).join(', ');
           baseCase.project.productType = meta.constructionType;
           let newId: string | null = null;
@@ -395,10 +416,13 @@ export const useModelStore = create<ModelStore>()(
           return newId;
         },
 
-        createScenario: async (projectId, name, fromScenarioId) => {
+        createScenario: async (projectId, name, from) => {
           const project = get().projects.find((p) => p.id === projectId);
           if (!project) return null;
-          const assumptions = clone(savedSnapshot(project, fromScenarioId));
+          const assumptions: AnyAssumptions =
+            from !== null && typeof from === 'object'
+              ? { ...clone(TH_TEMPLATE_ASSUMPTIONS), project: { ...clone(TH_TEMPLATE_ASSUMPTIONS.project), name: project.name } }
+              : clone(savedSnapshot(project, from));
           let newId: string | null = null;
           await sync(async () => {
             const supabase = createClient();
@@ -524,7 +548,7 @@ export const useModelStore = create<ModelStore>()(
         if (version < 3) {
           // Capture v1/v2 local projects for a one-time upload to Supabase.
           const old = persisted as
-            | { assumptions?: Assumptions; projects?: (Partial<Project> & { name: string })[] }
+            | { assumptions?: AnyAssumptions; projects?: (Partial<Project> & { name: string })[] }
             | undefined;
           if (old?.projects && old.projects.length > 0) {
             legacyProjects = old.projects.map((p) => ({
@@ -570,17 +594,41 @@ export function useActiveProject(): Project | undefined {
   return useModelStore((s) => s.projects.find((p) => p.id === s.activeProjectId) ?? s.projects[0]);
 }
 
-/** Recomputes the full model whenever the working draft changes (runs in ~5ms). */
+/** Which model the working draft is: the multifamily rental engine or the for-sale townhome engine. */
+export function useModelKind(): ModelKind {
+  return useModelStore((s) => kindOf(s.assumptions));
+}
+
+/** Recomputes the full RENTAL model whenever the working draft changes (runs in ~5ms). Rental pages only. */
 export function useModel() {
   const assumptions = useModelStore((s) => s.assumptions);
-  return useMemo(() => runModel(assumptions), [assumptions]);
+  return useMemo(() => {
+    if (isForSale(assumptions)) throw new Error('useModel() called while a for-sale case is open — branch on useModelKind() first');
+    return runModel(assumptions);
+  }, [assumptions]);
+}
+
+/** The FOR-SALE draft and its model. For-sale pages only. */
+export function useForSale() {
+  const assumptions = useModelStore((s) => s.assumptions);
+  const update = useModelStore((s) => s.updateForSale);
+  const model = useMemo(() => {
+    if (!isForSale(assumptions)) throw new Error('useForSale() called while a rental case is open — branch on useModelKind() first');
+    return runForSaleModel(assumptions);
+  }, [assumptions]);
+  return { a: assumptions as ForSaleAssumptions, m: model, update };
+}
+
+/** Either model for the working draft, for kind-agnostic chrome such as the KPI strip. */
+export function useAnyModel() {
+  const assumptions = useModelStore((s) => s.assumptions);
+  return useMemo(() => runAny(assumptions), [assumptions]);
 }
 
 /** Safe wrapper for comparison views — a degenerate scenario returns null instead of throwing. */
-export function tryRunModel(assumptions: Assumptions) {
-  try {
-    return runModel(assumptions);
-  } catch {
-    return null;
-  }
+export const tryRunModel = tryRunAny;
+
+/** The RENTAL draft for the rental input pages (they only render while a rental case is open). */
+export function useRentalAssumptions(): Assumptions {
+  return useModelStore((s) => s.assumptions as Assumptions);
 }

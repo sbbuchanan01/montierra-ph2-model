@@ -1,15 +1,17 @@
 'use client';
 
+import { ForSaleCurve } from '@/components/forsale/Curve';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Field, NumberInput, Select, Note } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { CURVE_NAMES, CURVE_TEMPLATES, type CurveName } from '@/lib/model/curves';
 import { fmtDate, fmtMoney } from '@/lib/format';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 
-export default function CurvePage() {
-  const a = useModelStore((s) => s.assumptions);
+function CurvePage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
 
@@ -140,4 +142,9 @@ export default function CurvePage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleCurve /> : <CurvePage />;
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Th, Td, Note } from '@/components/ui';
 import { useModel } from '@/store/useModelStore';
 import { fmtMoney, fmtNum, fmtPct } from '@/lib/format';
@@ -58,7 +59,7 @@ function CompTable({ comps }: { comps: RentComp[] }) {
   );
 }
 
-export default function CompsPage() {
+function CompsPage() {
   const m = useModel();
   const compAvgPsf =
     RENT_COMPS.reduce((s, c) => s + (c.effRent / c.avgSf) * c.units, 0) /
@@ -128,4 +129,11 @@ export default function CompsPage() {
       </Card>
     </div>
   );
+}
+
+export default function Page() {
+  if (useModelKind() === 'forSale') {
+    return <Note>Rent comps apply to the for-rent cases. The for-sale case prices homes on the Program &amp; Pricing tab.</Note>;
+  }
+  return <CompsPage />;
 }

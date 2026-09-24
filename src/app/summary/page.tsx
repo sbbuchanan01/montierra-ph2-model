@@ -1,16 +1,18 @@
-﻿'use client';
+'use client';
 
+import { ForSaleSummary } from '@/components/forsale/Summary';
+import { useModelKind } from '@/store/useModelStore';
 import { type ReactNode } from 'react';
 import { Card, StatCard, Th, Td, Money } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
 import {
   ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 
-export default function DealSummaryPage() {
+function DealSummaryPage() {
   const m = useModel();
-  const a = useModelStore((s) => s.assumptions);
+  const a = useRentalAssumptions();
 
   const uses = [
     { name: 'Land', value: m.budget.landTotal },
@@ -290,4 +292,9 @@ function CTd({ children, left = false, className = '' }: { children?: ReactNode;
       {children}
     </td>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleSummary /> : <DealSummaryPage />;
 }

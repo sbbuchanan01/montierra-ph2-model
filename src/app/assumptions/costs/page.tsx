@@ -1,8 +1,10 @@
 'use client';
 
+import { ForSaleBudget } from '@/components/forsale/Budget';
+import { useModelKind } from '@/store/useModelStore';
 import { Fragment, useMemo, useState } from 'react';
 import { Card, NumberInput, PctInput, Th, Td, Money, Note, Field } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { categoryForCode, DD_PREDEV_BUDGET } from '@/lib/model/costData';
 import { fmtDate, fmtMoney } from '@/lib/format';
 import type { CostAmountType, CostLineItem } from '@/lib/model/types';
@@ -42,8 +44,8 @@ const uid = (): string =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-export default function CostsPage() {
-  const a = useModelStore((s) => s.assumptions);
+function CostsPage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
   const [open, setOpen] = useState<Record<string, boolean>>({ Land: true, 'Hard Costs': true });
@@ -371,4 +373,9 @@ export default function CostsPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleBudget /> : <CostsPage />;
 }

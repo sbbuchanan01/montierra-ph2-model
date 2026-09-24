@@ -1,11 +1,13 @@
 'use client';
 
+import { ForSaleCarryTaxes } from '@/components/forsale/CarryTaxes';
+import { useModelKind } from '@/store/useModelStore';
 import { Card, Field, NumberInput, PctInput, Select, Th, Td, Money, Note } from '@/components/ui';
-import { useModel, useModelStore } from '@/store/useModelStore';
+import { useModel, useModelStore, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtMoney, fmtPct } from '@/lib/format';
 
-export default function TaxesPage() {
-  const a = useModelStore((s) => s.assumptions);
+function TaxesPage() {
+  const a = useRentalAssumptions();
   const update = useModelStore((s) => s.update);
   const m = useModel();
 
@@ -215,4 +217,9 @@ export default function TaxesPage() {
       </Card>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleCarryTaxes /> : <TaxesPage />;
 }

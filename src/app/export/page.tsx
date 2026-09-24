@@ -1,15 +1,17 @@
 'use client';
 
+import { ForSaleExport } from '@/components/forsale/Export';
+import { useModelKind } from '@/store/useModelStore';
 import { useState } from 'react';
 import { Card, Th, Td, Money } from '@/components/ui';
-import { useActiveProject, useModel, useModelStore } from '@/store/useModelStore';
+import { useActiveProject, useModel, useRentalAssumptions } from '@/store/useModelStore';
 import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtX } from '@/lib/format';
 
 type Variant = 'jv' | 'debt';
 
-export default function ExportPage() {
+function ExportPage() {
   const m = useModel();
-  const a = useModelStore((s) => s.assumptions);
+  const a = useRentalAssumptions();
   const project = useActiveProject();
   const [variant, setVariant] = useState<Variant>('jv');
   const projectName = project?.name ?? a.project.name;
@@ -243,4 +245,9 @@ export default function ExportPage() {
       </div>
     </div>
   );
+}
+
+/** Rental or for-sale — the working draft decides which page renders. */
+export default function Page() {
+  return useModelKind() === 'forSale' ? <ForSaleExport /> : <ExportPage />;
 }
